@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+<title>Yen Tracker</title>
+<meta name="description" content="Offline expense tracker for Japan, October 2026">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#111e3a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ============ ADD SPEND ============ -->
+  <section class="view" id="view-add">
+    <header class="hdr">
+      <div>
+        <div class="hdr-day" id="addDayLabel">—</div>
+        <div class="hdr-sub" id="addDateLabel">—</div>
+      </div>
+      <button class="chip-city" id="addCityBtn" type="button">Osaka</button>
+    </header>
+
+    <div class="amount-wrap">
+      <div class="amount-cur" id="addCur">¥</div>
+      <div class="amount" id="addAmount">0</div>
+    </div>
+    <div class="amount-zar" id="addZar">R0.00</div>
+
+    <div class="cats" id="addCats"></div>
+
+    <div class="wallet-row" id="addWallets"></div>
+
+    <div class="note-row">
+      <input type="text" id="addNote" placeholder="Note (optional)" autocomplete="off" enterkeyhint="done">
+    </div>
+
+    <div class="keypad" id="keypad">
+      <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+      <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+      <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+      <button data-k="dot" class="k-alt">.</button><button data-k="0">0</button>
+      <button data-k="del" class="k-alt" aria-label="Delete">⌫</button>
+    </div>
+
+    <button class="save-btn" id="saveSpend" type="button">Save</button>
+  </section>
+
+  <!-- ============ CASH ============ -->
+  <section class="view" id="view-cash" hidden>
+    <header class="hdr"><h1>Cash &amp; cards</h1></header>
+
+    <div class="runway" id="runway"></div>
+
+    <div id="walletCards"></div>
+
+    <div class="actions">
+      <button class="act" id="btnAtm" type="button"><span>🏧</span>ATM withdrawal</button>
+      <button class="act" id="btnFx" type="button"><span>🔁</span>Change USD → yen</button>
+      <button class="act" id="btnCashIn" type="button"><span>💵</span>Add cash on hand</button>
+    </div>
+
+    <h2 class="sec" id="moneyInHd" hidden>Money in — check these against your statement</h2>
+    <div id="moneyInList"></div>
+
+    <h2 class="sec">What it's costing you</h2>
+    <div class="fee-box" id="feeBox"></div>
+    <p class="tip"><b>Withdrawing isn't spending.</b> Money you draw at an ATM has only moved from your
+      account into your pocket — it counts as spent when you actually hand it over. So drawing yen on your
+      FNB card and tapping that same card are never counted twice. The figure on each card above is what
+      that account has paid out in total, which is the number to check against your banking app.</p>
+    <p class="tip">At the ATM, always choose to be charged in <b>yen</b>, never rands — picking rands adds a hidden 3–7% markup.</p>
+  </section>
+
+  <!-- ============ STATS ============ -->
+  <section class="view" id="view-stats" hidden>
+    <header class="hdr"><h1>Where it went</h1></header>
+    <div class="totals" id="statTotals"></div>
+    <div class="seg" id="statSeg">
+      <button class="on" data-seg="cat">Category</button>
+      <button data-seg="day">Day</button>
+      <button data-seg="city">City</button>
+      <button data-seg="wallet">Source</button>
+    </div>
+    <div id="statBody"></div>
+  </section>
+
+  <!-- ============ NOTES ============ -->
+  <section class="view" id="view-notes" hidden>
+    <header class="hdr">
+      <div>
+        <h1>Notes</h1>
+        <div class="hdr-sub">Anything the app doesn't cater for</div>
+      </div>
+      <button class="chip-city" id="noteCityBtn" type="button">—</button>
+    </header>
+
+    <textarea id="noteText" rows="4" placeholder="A receipt worth keeping, a cost to split with someone later, an ATM that refused the card, something to sort out when you're home…"></textarea>
+    <button class="save-btn" id="addNoteBtn" type="button" disabled>Add note</button>
+
+    <p class="tip">Notes are dated and saved with everything else — they're in your backups and
+      in the spreadsheet export, so nothing gets lost between here and home.</p>
+
+    <h2 class="sec" id="notesHd" hidden>Written so far</h2>
+    <div id="notesList"></div>
+  </section>
+
+  <!-- ============ DATA ============ -->
+  <section class="view" id="view-data" hidden>
+    <header class="hdr"><h1>Entries &amp; backup</h1></header>
+
+    <div class="backup-box" id="backupBox"></div>
+    <div class="actions">
+      <button class="act" id="btnBackup" type="button"><span>☁️</span>Back up to Drive</button>
+      <button class="act" id="btnCsv" type="button"><span>📄</span>Export spreadsheet (CSV)</button>
+      <button class="act" id="btnRestore" type="button"><span>↩️</span>Restore from backup file</button>
+      <button class="act" id="btnSettings" type="button"><span>⚙️</span>Rates &amp; fees</button>
+    </div>
+    <input type="file" id="restoreFile" accept=".json,application/json" hidden>
+
+    <h2 class="sec">All entries</h2>
+    <div id="txList"></div>
+  </section>
+
+  <!-- ============ TAB BAR ============ -->
+  <nav class="tabs" id="tabs">
+    <button data-v="add" class="on"><span>＋</span>Add</button>
+    <button data-v="cash"><span>👛</span>Cash</button>
+    <button data-v="stats"><span>📊</span>Stats</button>
+    <button data-v="notes"><span>📝</span>Notes</button>
+    <button data-v="data"><span>🗂️</span>Data</button>
+  </nav>
+</div>
+
+<!-- ============ MODAL ============ -->
+<div class="modal-back" id="modalBack" hidden>
+  <div class="modal" id="modal">
+    <div class="modal-hd"><h3 id="modalTitle"></h3><button id="modalX" type="button" aria-label="Close">✕</button></div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
