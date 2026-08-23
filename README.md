@@ -1,4 +1,4 @@
-# Yen Tracker — Japan, 5–24 October 2026
+﻿# Yen Tracker — Japan, 5–24 October 2026
 
 An offline expense tracker for your trip. Everything is stored on your own phone, so it
 works on a train through the Alps with no signal. Nothing is sent anywhere unless you
@@ -23,7 +23,7 @@ offline. This folder is already a git repository, so:
 3. Back on your computer, in this folder:
 
 ```
-git remote add origin https://github.com/YOUR-USERNAME/yen-tracker.git
+git remote add origin https://github.com/VJKoekemoer/yen-tracker.git
 git push -u origin main
 ```
 
@@ -32,7 +32,7 @@ git push -u origin main
 5. Wait a minute or two, then visit:
 
 ```
-https://YOUR-USERNAME.github.io/yen-tracker/
+https://vjkoekemoer.github.io/yen-tracker/
 ```
 
 That address is yours permanently. Write it down.
@@ -150,14 +150,14 @@ tap wherever they'll let you, and always, always choose to be charged in yen.
 ## Two shortcuts for trying it out
 
 Add these to the end of the address when you want to reset things while testing.
-They work on the live Netlify address too, not just locally.
+They work on the live address too, not just locally.
 
 | Address | What it does |
 |---|---|
 | `.../?reset` | Wipes all entries and starts you with an empty book. Keeps your exchange rates and fee settings. |
 | `.../?demo` | Loads a sample five days of the trip — the gifted dollars, the Changi and KIX withdrawals, seventeen spends. Only ever fills an **empty** app, so it can't overwrite real entries. |
 
-So `YOUR-USERNAME.github.io/yen-tracker/?demo` shows you a populated app, and `?reset`
+So `vjkoekemoer.github.io/yen-tracker/?demo` shows you a populated app, and `?reset`
 clears it again. Once the trip starts you'll just use the plain address and never think
 about these again.
 
