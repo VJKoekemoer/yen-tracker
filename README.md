@@ -147,10 +147,21 @@ tap wherever they'll let you, and always, always choose to be charged in yen.
 
 ---
 
-## Two shortcuts for trying it out
+## Trying it out before the trip
 
-Add these to the end of the address when you want to reset things while testing.
-They work on the live address too, not just locally.
+In the app: **Data → Rates & fees**, and scroll to the bottom.
+
+- **Load a sample trip to play with** — fills the app with five made-up days so you can
+  see how it all behaves. Only works on an empty app, so it can't overwrite real entries.
+- **Clear everything and start fresh** — wipes entries and notes, keeps your rates and
+  fee settings. Do this once, just before you fly.
+
+Play with it as much as you like. Nothing you enter now can survive that Clear button.
+
+### The same two, from the address bar
+
+If you're testing in a browser rather than the installed app, these do the same thing.
+They won't work from the installed app, which has no address bar.
 
 | Address | What it does |
 |---|---|

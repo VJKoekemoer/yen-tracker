@@ -1,5 +1,5 @@
 // Bump this string to force phones to pick up a new version of the app.
-const CACHE = 'yen-tracker-v3';
+const CACHE = 'yen-tracker-v4';
 
 const SHELL = [
   './',

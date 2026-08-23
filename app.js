@@ -870,8 +870,16 @@ function dlgSettings(){
       <div class="hint">Confirm these three with FNB and Standard Bank before you fly — the app's rand totals are only as good as these numbers.</div></div>
 
     <button class="mbtn" id="sGo" type="button">Save</button>
-    <button class="mbtn ghost" id="sWipe" type="button" style="margin-top:10px;color:var(--accent-t)">Clear all entries and start fresh</button>
-    <div class="hint" style="margin-top:8px">Use this once you've finished playing and the trip actually starts. Back up first if you want to keep anything.</div>
+
+    <h2 class="sec">Trying it out</h2>
+    <button class="mbtn ghost" id="sDemo" type="button">Load a sample trip to play with</button>
+    <div class="hint" style="margin-top:8px">Fills the app with five made-up days — the gifted dollars,
+      a withdrawal at Changi and one at Kansai, and a handful of spends — so you can see how everything
+      behaves. It only works on an empty app, so it can never overwrite real entries.</div>
+
+    <button class="mbtn ghost" id="sWipe" type="button" style="margin-top:14px;color:var(--accent-t)">Clear everything and start fresh</button>
+    <div class="hint" style="margin-top:8px">Use this when you've finished playing and the trip is about
+      to start. Back up first if there's anything you want to keep.</div>
   `);
 
   const status = () => {
@@ -887,6 +895,15 @@ function dlgSettings(){
     if (ok){ $('#sJPY').value=s.rates.JPY; $('#sSGD').value=s.rates.SGD; $('#sUSD').value=s.rates.USD; status(); toast('Rates updated'); }
     else toast('No connection — rates unchanged');
     $('#sFetch').textContent = 'Refresh rates from the internet';
+  };
+
+  $('#sDemo').onclick = () => {
+    if (seedDemo()){
+      closeModal(); renderAll(); show('stats');
+      toast('Sample trip loaded — have a play');
+    } else {
+      toast(`Clear your ${S.tx.length} entries first`);
+    }
   };
 
   $('#sWipe').onclick = () => {
