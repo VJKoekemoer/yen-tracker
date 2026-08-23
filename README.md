@@ -13,18 +13,33 @@ your phone for step 3.
 
 ### 1. Put the files online
 
-The app has to live at a proper web address before Android will let you install it as a
-real app. The easiest free way:
+The app has to live at a proper `https://` address before Android will let you install
+it as a real app — a file opened from your hard drive doesn't count, and won't work
+offline. This folder is already a git repository, so:
 
-1. On your computer, go to **https://app.netlify.com/drop**
-2. Sign in (free — Google or email is fine)
-3. Drag this whole **`yen-tracker`** folder onto the page
-4. Wait a few seconds. You'll get an address like `graceful-otter-1a2b3c.netlify.app`
+1. On **github.com**, click **+ → New repository**
+2. Name it `yen-tracker`, leave it **Public**, and add **nothing** — no README, no
+   .gitignore, no licence. The repository must start empty.
+3. Back on your computer, in this folder:
 
-That address is now yours permanently. Write it down.
+```
+git remote add origin https://github.com/YOUR-USERNAME/yen-tracker.git
+git push -u origin main
+```
 
-> If you'd rather rename it to something memorable, Netlify's **Site settings → Change
-> site name** lets you pick, e.g. `vicky-japan.netlify.app`.
+4. In the repository, go to **Settings → Pages**. Under *Build and deployment*, set
+   **Source: Deploy from a branch**, **Branch: main**, **Folder: / (root)**. Save.
+5. Wait a minute or two, then visit:
+
+```
+https://YOUR-USERNAME.github.io/yen-tracker/
+```
+
+That address is yours permanently. Write it down.
+
+> The repository is public, which is what makes GitHub Pages free. There's no spending
+> data in it — your entries live on your phone and in your Drive backups, never here.
+> What *is* public is your travel dates and route, since they're built into the app.
 
 ### 2. Open it on your phone
 
@@ -142,8 +157,9 @@ They work on the live Netlify address too, not just locally.
 | `.../?reset` | Wipes all entries and starts you with an empty book. Keeps your exchange rates and fee settings. |
 | `.../?demo` | Loads a sample five days of the trip — the gifted dollars, the Changi and KIX withdrawals, seventeen spends. Only ever fills an **empty** app, so it can't overwrite real entries. |
 
-So `vicky-japan.netlify.app/?demo` shows you a populated app, and `?reset` clears it again.
-Once the trip starts you'll just use the plain address and never think about these again.
+So `YOUR-USERNAME.github.io/yen-tracker/?demo` shows you a populated app, and `?reset`
+clears it again. Once the trip starts you'll just use the plain address and never think
+about these again.
 
 ## If you need to change something
 
@@ -159,6 +175,18 @@ The whole app is four files:
 Your itinerary is the `ITIN` block near the top of `app.js`, and the cities list is
 right below it. If the route changes, edit those.
 
-After changing anything, re-drag the folder onto Netlify **and** bump the version
-string at the top of `sw.js` (`yen-tracker-v1` → `v2`), otherwise phones will keep
-serving the old cached copy.
+After changing anything, **bump the version string at the top of `sw.js`**
+(`yen-tracker-v2` → `v3`) and then push:
+
+```
+git add -A
+git commit -m "what you changed"
+git push
+```
+
+GitHub Pages republishes within a minute or two. The version bump matters: it's what
+tells phones their cached copy is stale. Skip it and your phone will happily keep
+running the old app for weeks, which looks exactly like the update having failed.
+
+Because the code lives on GitHub, a fix can be pushed from any computer — useful if
+something goes wrong while you're travelling without a laptop.
