@@ -156,6 +156,10 @@ function ledger(){
   const card = {};
   WALLETS.filter(w => w.type==='card').forEach(w => card[w.id] = { tap:0, atm:0, fee:0 });
 
+  // Cash spent beyond what was recorded as received — almost always a withdrawal
+  // that never got logged. Surfaced rather than silently absorbed.
+  const unfunded = {};
+
   // Order matters: a spend drawn before a top-up is charged at the older,
   // more expensive basis. Date first, then the moment it was entered.
   const rows = [...S.tx].sort((a,b) =>
@@ -180,9 +184,10 @@ function ledger(){
 
     else if (t.kind === 'fx'){
       const from = cash[t.from], to = cash[t.to];
-      const basis = from && from.units > 0 ? from.cost / from.units : 0;
-      const moved = basis * t.fromAmount;
-      if (from){ from.units -= t.fromAmount; from.cost -= moved; }
+      const avail = from ? Math.max(0, from.units) : 0;
+      const basis = avail > 0 ? from.cost / avail : 0;
+      const moved = basis * Math.min(t.fromAmount, avail);
+      if (from){ from.units -= t.fromAmount; from.cost = Math.max(0, from.cost - moved); }
       if (to)  { to.units   += t.toAmount;   to.cost   += moved; }
       p.zarCost  = 0;
       p.zarValue = 0;
@@ -195,11 +200,19 @@ function ledger(){
 
       if (w && w.type === 'cash'){
         const c = cash[t.wallet];
-        const basis = c.units > 0 ? c.cost / c.units : 0;
-        p.zarCost = basis * t.amount;
+        const avail = Math.max(0, c.units);
+        const basis = avail > 0 ? c.cost / avail : 0;
+        const covered = Math.min(t.amount, avail);
+        const short   = t.amount - covered;
+        // Cash spent that was never recorded as received still cost real money —
+        // value the shortfall at market rather than pretending it was free.
+        p.zarCost  = covered * basis + short / (t.spot || rate(t.cur));
+        p.unfunded = short;
+        // Let the balance go negative. That IS the signal something wasn't logged;
+        // clamping it to zero hides the problem.
         c.units -= t.amount;
-        c.cost  -= p.zarCost;
-        if (c.units < 0.0001){ c.units = Math.max(0,c.units); c.cost = Math.max(0,c.cost); }
+        c.cost   = Math.max(0, c.cost - covered * basis);
+        if (short > 0) unfunded[t.wallet] = (unfunded[t.wallet] || 0) + short;
       } else {
         const pct = w ? (S.settings[w.fx] || 0) : 0;
         p.zarCost = market * (1 + pct/100);
@@ -214,7 +227,7 @@ function ledger(){
     priced.push(p);
   }
 
-  return { cash, priced, feesPaid, spendByWallet, card };
+  return { cash, priced, feesPaid, spendByWallet, card, unfunded };
 }
 
 /* ---------- daily burn + runway ---------- */
@@ -263,11 +276,19 @@ function renderAdd(){
     const market = toZarMarket(amt, cur);
     if (w.type === 'cash'){
       const c = ledger().cash[w.id];
-      const basis = c.units > 0 ? c.cost/c.units : 0;
-      if (c.units <= 0)     zarTxt = `${R(market)} — but your ${w.short} is empty`;
-      else if (basis <= 0)  zarTxt = `${R(market)} of value · gifted, so costs you nothing`;
-      else                  zarTxt = `${R(basis*amt)} · from your ${w.short}`;
-      if (amt > c.units) zarTxt += ` ⚠ more than the ${money(c.units,cur)} you're holding`;
+      const held  = Math.max(0, c.units);
+      const basis = held > 0 ? c.cost/held : 0;
+      if (held <= 0){
+        zarTxt = `${R(market)} at market rate · nothing recorded in your ${w.short} yet`;
+      } else if (amt > held){
+        // part comes from the wallet, the rest is money we've no record of
+        const cost = held*basis + (amt-held)/rate(cur);
+        zarTxt = `${R(cost)} · ⚠ ${money(amt-held,cur)} more than you're holding`;
+      } else if (basis <= 0){
+        zarTxt = `${R(market)} of value · gifted, so costs you nothing`;
+      } else {
+        zarTxt = `${R(basis*amt)} · from your ${w.short}`;
+      }
     } else {
       const pct = S.settings[w.fx] || 0;
       zarTxt = `${R(market*(1+pct/100))} · incl. ${pct}% card fee`;
@@ -345,6 +366,17 @@ function saveSpend(){
 function renderCash(){
   const L = ledger();
 
+  // spent-more-than-recorded warning
+  const shorts = Object.entries(L.unfunded).filter(([,v]) => v > 0);
+  const al = $('#shortAlert');
+  al.hidden = shorts.length === 0;
+  if (shorts.length){
+    const bits = shorts.map(([id,v]) => `<b>${money(v, W[id].cur)}</b> of ${W[id].label.toLowerCase()}`);
+    al.innerHTML = `You've spent ${bits.join(' and ')} more than you've recorded receiving. ` +
+      `Most likely an ATM withdrawal or an exchange that didn't get logged — add it and these ` +
+      `figures will correct themselves. Until then that cash is being valued at the market rate.`;
+  }
+
   // runway
   const yen = L.cash.jpy.units;
   const perDay = burn('jpy');
@@ -370,11 +402,13 @@ function renderCash(){
     if (w.type === 'cash'){
       const c = L.cash[w.id];
       const basis = c.units > 0 ? c.cost/c.units : 0;
-      if (c.units <= 0) card.classList.add('empty');
+      if (c.units < 0) card.classList.add('short');
+      else if (c.units === 0) card.classList.add('empty');
       // Yen are worth fractions of a rand, so quote the cost per 100 rather than
       // per 1, otherwise it rounds to a meaningless "R0,07".
       let costLine;
-      if (c.units <= 0)      costLine = 'Nothing in hand';
+      if (c.units < 0)       costLine = `Spent ${money(-c.units, w.cur)} more than you've recorded getting`;
+      else if (c.units === 0) costLine = 'Nothing in hand';
       else if (basis <= 0)   costLine = 'A gift — cost you nothing';
       else if (basis < 0.5)  costLine = `Cost you ${R(basis*100)} per ${CUR[w.cur].sym}100`;
       else                   costLine = `Cost you ${R(basis)} per ${CUR[w.cur].sym}1`;
