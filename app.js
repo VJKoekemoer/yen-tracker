@@ -8,6 +8,10 @@
 
 const KEY = 'jpn2026';
 
+// Shown in Settings so you can tell at a glance whether an update has landed.
+// Keep in step with the CACHE version at the top of sw.js.
+const APP_VERSION = 'v5';
+
 /* ---------- reference data ---------- */
 
 const CUR = {
@@ -871,6 +875,11 @@ function dlgSettings(){
 
     <button class="mbtn" id="sGo" type="button">Save</button>
 
+    <h2 class="sec">App version</h2>
+    <div class="calc">You're running <b>${APP_VERSION}</b>. Updates arrive on their own when
+      you're online — this button just hurries one along.</div>
+    <button class="mbtn ghost" id="sUpdate" type="button">Check for an update now</button>
+
     <h2 class="sec">Trying it out</h2>
     <button class="mbtn ghost" id="sDemo" type="button">Load a sample trip to play with</button>
     <div class="hint" style="margin-top:8px">Fills the app with five made-up days — the gifted dollars,
@@ -895,6 +904,20 @@ function dlgSettings(){
     if (ok){ $('#sJPY').value=s.rates.JPY; $('#sSGD').value=s.rates.SGD; $('#sUSD').value=s.rates.USD; status(); toast('Rates updated'); }
     else toast('No connection — rates unchanged');
     $('#sFetch').textContent = 'Refresh rates from the internet';
+  };
+
+  $('#sUpdate').onclick = async () => {
+    const b = $('#sUpdate');
+    if (!navigator.onLine) return toast('No connection — try again on wifi');
+    b.textContent = 'Checking…';
+    await checkForUpdate(false);
+    // Give the new worker a moment to install; if one took over, the page reloads itself.
+    setTimeout(() => {
+      if (!reloadingForUpdate){
+        b.textContent = 'Check for an update now';
+        toast(`You're on the latest (${APP_VERSION})`);
+      }
+    }, 3000);
   };
 
   $('#sDemo').onclick = () => {
@@ -1179,7 +1202,44 @@ function init(){
     if (a > 86400000) fetchRates().then(ok => { if (ok) renderAll(); });
   });
 
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  setupUpdates();
+}
+
+/* ---------- keeping the installed app up to date ----------
+   An installed PWA resumed from the app switcher performs no navigation, so
+   Chrome never checks for a new service worker on its own. Ask explicitly:
+   once at startup, and again whenever the app comes back to the foreground. */
+
+let swReg = null, reloadingForUpdate = false, lastUpdateCheck = 0;
+
+function setupUpdates(){
+  if (!('serviceWorker' in navigator)) return;
+
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    // Only when replacing an existing worker — on a first install this fires
+    // as the worker claims the page, and reloading then would be pointless.
+    if (hadController && !reloadingForUpdate){
+      reloadingForUpdate = true;
+      location.reload();
+    }
+  });
+
+  navigator.serviceWorker.register('sw.js')
+    .then(reg => { swReg = reg; return reg.update(); })
+    .catch(()=>{});
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkForUpdate();
+  });
+  window.addEventListener('online', checkForUpdate);
+}
+
+function checkForUpdate(quiet = true){
+  if (!swReg || !navigator.onLine) return Promise.resolve(false);
+  if (quiet && Date.now() - lastUpdateCheck < 60000) return Promise.resolve(false);
+  lastUpdateCheck = Date.now();
+  return swReg.update().then(() => true).catch(() => false);
 }
 
 document.addEventListener('DOMContentLoaded', init);
