@@ -76,7 +76,8 @@ const DEFAULTS = {
     creditFxPct: 2.75,  // FNB credit card margin
     mymoFxPct: 5.0,     // Standard Bank MyMo — emergency only
     giftedUsdFree: true, // USD was a gift: counts as R0 out of pocket
-    dailyBudget: 1500   // rands a day of your own money (gifted dollars excluded); 0 hides it
+    dailyBudget: 1500,  // rands a day of your own money (gifted dollars excluded); 0 hides it
+    travelDayBudget: 750 // first and last day, mostly spent on a plane
   },
   lastBackup: null,
   ui: { wallet:'jpy', cat:'food', city:null }
@@ -303,8 +304,18 @@ function ownMoneyOn(date, L = ledger()){
                  .reduce((a,t) => a + t.zarCost, 0);
 }
 
+// The first and last days are mostly spent on a plane, so they get a smaller allowance
+const isFlyingDay = d => d === TRIP_START || d === TRIP_END;
+
+function budgetFor(d){
+  const s = S.settings;
+  if (!(s.dailyBudget > 0)) return 0;
+  return isFlyingDay(d) && s.travelDayBudget != null ? s.travelDayBudget : s.dailyBudget;
+}
+
 function budgetSummary(L = ledger()){
   const daily = S.settings.dailyBudget || 0;
+  const flying = budgetFor(TRIP_START);
   const spends = L.priced.filter(t => t.kind === 'spend');
   // "So far" runs to today, or to your latest entry if that's later — so the
   // sample trip and any pre-trip testing still add up sensibly.
@@ -312,12 +323,23 @@ function budgetSummary(L = ledger()){
   const through = last > TRIP_END ? TRIP_END : last;
   const days = Math.max(1, dayNo(through));
   const spent = spends.filter(t => t.date <= through).reduce((a,t) => a + t.zarCost, 0);
-  const allowed = daily * days;
-  const remainingDays = TRIP_DAYS - days;
-  const wholeTrip = daily * TRIP_DAYS;
+
+  let allowed = 0, wholeTrip = 0;
+  for (let d = TRIP_START; d <= TRIP_END; d = addDays(d,1)){
+    wholeTrip += budgetFor(d);
+    if (d <= through) allowed += budgetFor(d);
+  }
   const totalSpent = spends.reduce((a,t) => a + t.zarCost, 0);
-  return { daily, days, spent, allowed, diff: allowed - spent, remainingDays, wholeTrip,
-           perDayToFinish: remainingDays > 0 ? (wholeTrip - totalSpent) / remainingDays : null };
+
+  // What's left, shared across the remaining days in proportion to their budgets,
+  // so the flight home still gets its smaller share.
+  const remainingDays = TRIP_DAYS - days;
+  const remainingAllowance = wholeTrip - allowed;
+  const ratio = remainingAllowance > 0 ? (wholeTrip - totalSpent) / remainingAllowance : null;
+  return { daily, flying, days, spent, allowed, diff: allowed - spent, remainingDays, wholeTrip,
+           homeDayAhead: through < TRIP_END,
+           perNormalDay: ratio != null ? ratio * daily : null,
+           perFlyingDay: ratio != null ? ratio * flying : null };
 }
 
 /* ============================================================
@@ -441,15 +463,16 @@ function saveSpend(){
 
 function renderBudgetStrip(){
   const b = $('#budgetStrip');
-  const daily = S.settings.dailyBudget || 0;
-  b.hidden = daily <= 0;
-  if (daily <= 0) return;
+  const on = (S.settings.dailyBudget || 0) > 0;
+  b.hidden = !on;
+  if (!on) return;
+  const daily = budgetFor(draft.date);
   const spent = ownMoneyOn(draft.date);
   const left = daily - spent;
-  const pct = Math.min(100, spent / daily * 100);
+  const pct = daily > 0 ? Math.min(100, spent / daily * 100) : (spent > 0 ? 100 : 0);
   b.classList.toggle('over', left < 0);
   b.innerHTML =
-    `<div class="bs-row"><span>Day ${dayNo(draft.date)} budget</span>` +
+    `<div class="bs-row"><span>Day ${dayNo(draft.date)} budget${isFlyingDay(draft.date) ? ' · flying' : ''}</span>` +
     `<span><b>${R0(spent)}</b> of ${R0(daily)} · ${left >= 0 ? `${R0(left)} left` : `<b class="over-t">${R0(left)} over</b>`}</span></div>` +
     `<div class="bs-bar"><div class="bs-fill" style="width:${pct.toFixed(1)}%"></div></div>`;
 }
@@ -736,7 +759,7 @@ function renderSpending(){
     return;
   }
 
-  if (seg === 'day'){ renderDayBars(spends, B.daily); return; }
+  if (seg === 'day'){ renderDayBars(spends); return; }
 
   const groups = {};
   for (const t of spends){
@@ -768,14 +791,26 @@ function renderBudgetCard(B){
   const under = B.diff >= 0;
   const pct = B.allowed > 0 ? Math.min(100, B.spent / B.allowed * 100) : 0;
   let ahead = '';
-  if (B.perDayToFinish != null){
-    ahead = B.perDayToFinish > 0
-      ? `To finish on budget you can spend about <b>${R0(B.perDayToFinish)} a day</b> for the remaining ${B.remainingDays} ${B.remainingDays===1?'day':'days'}.`
-      : `You're already past the whole-trip budget of ${R0(B.wholeTrip)}.`;
+  if (B.perNormalDay != null){
+    // The flight home is one of the remaining days but has its own smaller share
+    const normalDays = B.remainingDays - (B.homeDayAhead ? 1 : 0);
+    const splitHome = B.homeDayAhead && B.flying !== B.daily;
+    if (B.perNormalDay <= 0){
+      ahead = `You're already past the whole-trip budget of ${R0(B.wholeTrip)}.`;
+    } else if (splitHome && normalDays > 0){
+      ahead = `To finish on budget you can spend about <b>${R0(B.perNormalDay)} a day</b> for the next ` +
+        `${normalDays} ${normalDays===1?'day':'days'}, and about <b>${R0(B.perFlyingDay)}</b> on the day you fly home.`;
+    } else if (splitHome){
+      ahead = `To finish on budget you can spend about <b>${R0(B.perFlyingDay)}</b> on the day you fly home.`;
+    } else {
+      ahead = `To finish on budget you can spend about <b>${R0(B.perNormalDay)} a day</b> for the remaining ` +
+        `${B.remainingDays} ${B.remainingDays===1?'day':'days'}.`;
+    }
   }
   c.className = 'budget-card' + (under ? '' : ' over');
   c.innerHTML =
-    `<div class="bc-top"><span>Budget · ${R0(B.daily)} a day</span><span>Whole trip ${R0(B.wholeTrip)}</span></div>` +
+    `<div class="bc-top"><span>Budget · ${R0(B.daily)} a day${B.flying !== B.daily ? ` · ${R0(B.flying)} flying days` : ''}</span>` +
+    `<span>Whole trip ${R0(B.wholeTrip)}</span></div>` +
     `<div class="bc-main"><b>${R0(B.spent)}</b> of ${R0(B.allowed)} so far <span>(${B.days} ${B.days===1?'day':'days'})</span></div>` +
     `<div class="bs-bar"><div class="bs-fill" style="width:${pct.toFixed(1)}%"></div></div>` +
     `<div class="bc-verdict">${under ? `${R0(B.diff)} under budget` : `${R0(B.diff)} over budget`}</div>` +
@@ -785,27 +820,30 @@ function renderBudgetCard(B){
 
 // Day view: every trip day so far against the daily budget, with a marker
 // where the budget sits, so a quiet day and a splurge day read at a glance.
-function renderDayBars(spends, daily){
+function renderDayBars(spends){
+  const on = (S.settings.dailyBudget || 0) > 0;
   const byDay = {};
   // Same measure as the budget: your own money, gifted dollars excluded
   spends.forEach(t => byDay[t.date] = (byDay[t.date]||0) + t.zarCost);
   const last = Object.keys(byDay).sort().pop();
   const days = [];
   for (let d = TRIP_START; d <= last; d = addDays(d,1)) days.push(d);
-  const scale = Math.max(daily, ...Object.values(byDay));
+  const scale = Math.max(1, ...days.map(budgetFor), ...Object.values(byDay));
   $('#statBody').innerHTML =
-    `<p class="tip" style="margin:0 2px 12px">Your own money each day${daily > 0 ? ', against the budget' : ''}. The gifted dollars don't count here.</p>` +
+    `<p class="tip" style="margin:0 2px 12px">Your own money each day${on ? ', against that day\'s budget' : ''}. The gifted dollars don't count here.</p>` +
     days.slice().reverse().map(d => {
     const v = byDay[d] || 0;
-    const diff = daily - v;
-    const verdict = daily > 0
-      ? (diff >= 0 ? `<span class="good-t">${R0(diff)} under</span>` : `<span class="over-t">${R0(diff)} over</span>`)
+    const allow = budgetFor(d);
+    const diff = allow - v;
+    const verdict = on
+      ? (diff >= 0 ? `<span class="good-t">${R0(diff)} under</span>` : `<span class="over-t">${R0(diff)} over</span>`) +
+        ` <span>of ${R0(allow)}${isFlyingDay(d) ? ' · flying day' : ''}</span>`
       : '';
     return `<div class="bar">
       <div class="bl"><span>Day ${dayNo(d)} · ${prettyDate(d)}${ITIN[d] ? ' · '+esc(ITIN[d]) : ''}</span><b>${R0(v)}</b></div>
       <div class="bt">
-        <div class="bf${daily > 0 && v > daily ? ' over' : ''}" style="width:${(v/scale*100).toFixed(1)}%"></div>
-        ${daily > 0 ? `<div class="bmark" style="left:${(daily/scale*100).toFixed(1)}%"></div>` : ''}
+        <div class="bf${on && v > allow ? ' over' : ''}" style="width:${(v/scale*100).toFixed(1)}%"></div>
+        ${on ? `<div class="bmark" style="left:${(allow/scale*100).toFixed(1)}%"></div>` : ''}
       </div>
       <div class="sub">${verdict}</div>
     </div>`;
@@ -997,8 +1035,12 @@ function dlgSettings(){
   const s = S.settings;
   modal('Rates, fees and budget', `
     <h2 class="sec" style="margin-top:0">Daily budget</h2>
-    <div class="f"><label>Rands a day</label><input type="number" id="sBudget" inputmode="numeric" value="${s.dailyBudget}">
-      <div class="hint">Counts only your own money. Anything paid for with the gifted dollars doesn't count, whether you spend them as dollars or change them into yen. ATM and card fees do count. Set it to 0 to hide the budget.</div></div>
+    <div class="f2">
+      <div class="f"><label>Rands a day</label><input type="number" id="sBudget" inputmode="numeric" value="${s.dailyBudget}"></div>
+      <div class="f"><label>First and last day</label><input type="number" id="sTravel" inputmode="numeric" value="${s.travelDayBudget}"></div>
+    </div>
+    <div class="f" style="margin-top:-6px">
+      <div class="hint">The first and last days are mostly on a plane, so they get less. Counts only your own money. Anything paid for with the gifted dollars doesn't count, whether you spend them as dollars or change them into yen. ATM and card fees do count. Set the daily figure to 0 to hide the budget.</div></div>
 
     <h2 class="sec">Exchange rates</h2>
     <div class="calc" id="rateStatus"></div>
@@ -1092,6 +1134,7 @@ function dlgSettings(){
     s.creditFxPct = parseFloat($('#sC').value)||0;
     s.mymoFxPct = parseFloat($('#sM').value)||0;
     s.dailyBudget = Math.max(0, parseFloat($('#sBudget').value)||0);
+    s.travelDayBudget = Math.max(0, parseFloat($('#sTravel').value)||0);
     save(); closeModal(); renderAll(); toast('Saved');
   };
 }

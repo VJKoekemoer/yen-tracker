@@ -65,7 +65,7 @@ Open the app while you still have wifi and go to **Backup → Rates, fees and bu
   2.75% for FNB debit and credit and R85 for the ATM fee, based on your cash strategy
   note, but please confirm with FNB and Standard Bank. Every rand figure in the app
   depends on these being right.
-- Check the **daily budget** — it starts at R1,500
+- Check the **budget** — R1,500 a day, R750 on the first and last days
 - When you're done testing, use **Clear everything and start fresh**
 
 ---
@@ -113,9 +113,10 @@ When you've got cash, tap **I got cash** and it asks how:
   total while still counting as money spent.
 
 ### Spending — where it went
-The **budget card** at the top shows what you've spent so far against R1,500 a day, how
-far over or under you are, and what you can spend each day for the rest of the trip to
-finish on budget. It counts only **your own money**: anything paid for with the gifted
+The **budget card** at the top shows what you've spent so far against your budget — R1,500
+a day, and R750 on the first and last days since those are mostly spent on a plane
+(R28,500 for the whole trip) — how far over or under you are, and what you can spend each
+day for the rest of the trip to finish on budget. It counts only **your own money**: anything paid for with the gifted
 dollars doesn't count, whether you spend them as dollars or change them into yen first.
 Once gift yen and ATM yen are mixed in your purse, each spend counts only its paid-for
 share. ATM fees and card fees do count, because that's your money too. Change the
