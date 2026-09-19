@@ -1,4 +1,4 @@
-﻿# Yen Tracker — Japan, 5–24 October 2026
+﻿# Yen Tracker — Japan, 5–25 October 2026
 
 An offline expense tracker for your trip. Everything is stored on your own phone, so it
 works on a train through the Alps with no signal. Nothing is sent anywhere unless you
@@ -114,8 +114,8 @@ When you've got cash, tap **I got cash** and it asks how:
 
 ### Spending — where it went
 The **budget card** at the top shows what you've spent so far against your budget — R1,500
-a day, and R750 on the first and last days since those are mostly spent on a plane
-(R28,500 for the whole trip) — how far over or under you are, and what you can spend each
+a day, and R750 on the first and last days (5 and 25 October) since those are mostly
+spent travelling (R30,000 for the whole trip) — how far over or under you are, and what you can spend each
 day for the rest of the trip to finish on budget. It counts only **your own money**: anything paid for with the gifted
 dollars doesn't count, whether you spend them as dollars or change them into yen first.
 Once gift yen and ATM yen are mixed in your purse, each spend counts only its paid-for

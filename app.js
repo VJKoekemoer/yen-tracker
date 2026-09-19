@@ -1,7 +1,7 @@
 'use strict';
 
 /* ============================================================
-   Yen Tracker — Japan, 5–24 October 2026
+   Yen Tracker — Japan, 5–25 October 2026
    Local-first: every entry is written to this device immediately.
    Cloud backup is a manual push to Drive via the Android share sheet.
    ============================================================ */
@@ -44,7 +44,8 @@ const CATS = [
 ];
 const CAT = Object.fromEntries(CATS.map(c => [c.id, c]));
 
-// Where you sleep each night, from the route plan
+// Where you sleep each night, from the route plan — plus the Johannesburg night on
+// the 24th after the late landing, and the flight on to Durban on the 25th
 const ITIN = {
   '2026-10-05':'In transit','2026-10-06':'Singapore','2026-10-07':'Kurashiki',
   '2026-10-08':'Hiroshima','2026-10-09':'Matsuyama','2026-10-10':'Takamatsu',
@@ -52,14 +53,25 @@ const ITIN = {
   '2026-10-14':'Nagoya','2026-10-15':'Kanazawa','2026-10-16':'Kanazawa',
   '2026-10-17':'Matsumoto','2026-10-18':'Nakatsugawa','2026-10-19':'Nagoya',
   '2026-10-20':'Kamakura','2026-10-21':'Tokyo','2026-10-22':'Tokyo',
-  '2026-10-23':'Tokyo','2026-10-24':'In transit'
+  '2026-10-23':'Tokyo','2026-10-24':'Johannesburg','2026-10-25':'In transit'
 };
-const TRIP_START = '2026-10-05', TRIP_END = '2026-10-24';
+const TRIP_START = '2026-10-05', TRIP_END = '2026-10-25';
 
 const CITIES = ['Singapore','Osaka','Okayama','Kurashiki','Takehara','Kure','Hiroshima','Miyajima',
   'Matsuyama','Takamatsu','Kobe','Nara','Uji','Kyoto','Nagoya','Gifu','Gero Onsen','Takayama',
   'Shirakawa-go','Kanazawa','Toyama','Kamikochi','Matsumoto','Nakatsugawa','Magome','Tsumago',
-  'Shizuoka','Enoshima','Kamakura','Tokyo','In transit','Other'];
+  'Shizuoka','Enoshima','Kamakura','Tokyo','Johannesburg','Durban','In transit','Other'];
+
+// Which currency a card is charged in, from where you are. The days at either end
+// are spent in South Africa (OR Tambo on the way out, Johannesburg and the Durban
+// flight on the way home), so those are rands — with no conversion fee.
+const HOME_CITIES = ['Johannesburg','Durban'];
+function localCur(city, date){
+  if (city === 'Singapore') return 'SGD';
+  if (HOME_CITIES.includes(city)) return 'ZAR';
+  if (city === 'In transit') return (date <= TRIP_START || date >= '2026-10-24') ? 'ZAR' : 'JPY';
+  return 'JPY';
+}
 
 /* ---------- state ---------- */
 
@@ -252,7 +264,8 @@ function ledger(){
         c.cost   = Math.max(0, c.cost - covered * basis);
         if (short > 0) unfunded[t.wallet] = (unfunded[t.wallet] || 0) + short;
       } else {
-        const pct = w ? (S.settings[w.fx] || 0) : 0;
+        // Paying in rands at home: nothing to convert, so no margin
+        const pct = w && t.cur !== 'ZAR' ? (S.settings[w.fx] || 0) : 0;
         p.zarCost = market * (1 + pct/100);
         feesPaid += p.zarCost - market;
         if (card[t.wallet]){
@@ -350,7 +363,7 @@ function currentCur(){
   const w = W[draft.wallet];
   if (w.type === 'cash') return w.cur;
   // Cards: currency follows where you are
-  return (draft.city || ITIN[draft.date]) === 'Singapore' ? 'SGD' : 'JPY';
+  return localCur(draft.city || ITIN[draft.date], draft.date);
 }
 
 function renderAdd(){
@@ -391,6 +404,8 @@ function renderAdd(){
       } else {
         zarTxt = `${R(basis*amt)} · from your ${w.short}`;
       }
+    } else if (cur === 'ZAR'){
+      zarTxt = `Paying in rands · no conversion fee`;
     } else {
       const pct = S.settings[w.fx] || 0;
       zarTxt = `${R(market*(1+pct/100))} · incl. ${pct}% card fee`;
@@ -799,9 +814,9 @@ function renderBudgetCard(B){
       ahead = `You're already past the whole-trip budget of ${R0(B.wholeTrip)}.`;
     } else if (splitHome && normalDays > 0){
       ahead = `To finish on budget you can spend about <b>${R0(B.perNormalDay)} a day</b> for the next ` +
-        `${normalDays} ${normalDays===1?'day':'days'}, and about <b>${R0(B.perFlyingDay)}</b> on the day you fly home.`;
+        `${normalDays} ${normalDays===1?'day':'days'}, and about <b>${R0(B.perFlyingDay)}</b> on your last day (${prettyDate(TRIP_END)}).`;
     } else if (splitHome){
-      ahead = `To finish on budget you can spend about <b>${R0(B.perFlyingDay)}</b> on the day you fly home.`;
+      ahead = `To finish on budget you can spend about <b>${R0(B.perFlyingDay)}</b> on your last day.`;
     } else {
       ahead = `To finish on budget you can spend about <b>${R0(B.perNormalDay)} a day</b> for the remaining ` +
         `${B.remainingDays} ${B.remainingDays===1?'day':'days'}.`;
@@ -999,7 +1014,7 @@ function renderEntries(){
         return `<div class="tx"><div class="ic">${c?.ic||'✨'}</div>
           <div class="mid"><div class="t1">${esc(t.note || c?.label || 'Spend')}</div>
           <div class="t2">${esc(t.city||'')}${t.city?' · ':''}${esc(W[t.wallet]?.short||'')}</div></div>
-          <div class="rt"><div class="a1">${money(t.amount,t.cur)}</div><div class="a2">${R(t.zarValue)}</div></div>
+          <div class="rt"><div class="a1">${money(t.amount,t.cur)}</div><div class="a2">${t.cur === 'ZAR' ? '' : R(t.zarValue)}</div></div>
           <button class="del" data-del="${t.id}" type="button" aria-label="Delete">✕</button></div>`;
       }).join('');
   }).join('');
