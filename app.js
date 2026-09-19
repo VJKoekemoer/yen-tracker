@@ -816,8 +816,9 @@ function renderSpending(){
   }).join('');
 }
 
-// The one relationship that genuinely adds up: what things were worth, less what
-// the gift paid for, plus what it cost to get at the money, is my own money.
+// The one relationship that genuinely adds up: what I spent with my own money, plus
+// what it cost to get at that money, is my own money. The gifted USD sits outside
+// the sum as a note — it's spending that never touched my own money.
 function renderAddsUp(spends){
   const box = $('#addsUp');
   box.hidden = !spends.length;
@@ -825,14 +826,15 @@ function renderAddsUp(spends){
   const worth = Math.round(spends.reduce((a,t) => a + t.zarValue, 0));
   const gift  = Math.round(spends.reduce((a,t) => a + (t.giftValue || 0), 0));
   const own   = Math.round(spends.reduce((a,t) => a + t.zarCost, 0));
-  // Worked from the rounded figures so the three lines visibly sum to the total
-  const fees  = own - worth + gift;
+  // Worked from the rounded figures so the lines visibly sum to the total
+  const spent = worth - gift;
+  const fees  = own - spent;
   box.innerHTML =
     `<div class="au-hd">How it adds up</div>` +
-    `<div class="au-row"><span>What I bought was worth</span><b>${R0(worth)}</b></div>` +
-    `<div class="au-row"><span>Paid for with the gifted dollars</span><b>− ${R0(gift)}</b></div>` +
+    `<div class="au-row"><span>Money spent excl. USD and fees</span><b>${R0(spent)}</b></div>` +
     `<div class="au-row"><span>Bank fees and exchange costs</span><b>${fees < 0 ? '−' : '+'} ${R0(fees)}</b></div>` +
-    `<div class="au-row au-total"><span>My own money</span><b>${R0(own)}</b></div>`;
+    `<div class="au-row au-total"><span>My own money</span><b>${R0(own)}</b></div>` +
+    (gift > 0 ? `<div class="au-aside"><span>Also paid for with the gifted USD, not counted</span><span>${R0(gift)}</span></div>` : '');
 }
 
 function renderBudgetCard(B){

@@ -125,16 +125,18 @@ figure, or set it to 0 to hide it, under Backup → Rates, fees and budget.
 Everything on the Spending tab measures that same thing — **my own money** — so every
 figure on it adds up to the same total as the budget card.
 
-**How it adds up** shows how that total relates to the full value of what you bought:
+**How it adds up** shows what that total is made of:
 
-> What I bought was worth **R3,009**
-> − paid for with the gifted dollars **R349**
+> Money spent excl. USD and fees **R2,660**
 > + bank fees and exchange costs **R118**
 > = **My own money R2,778**
+>
+> Also paid for with the gifted USD, not counted: R349
 
 (Figures from the sample trip.) The fees line is the ATM fees and card conversion margins
 on what you've spent so far; fees on cash still in your pocket join it as you spend that
-cash.
+cash. The gifted-USD line sits outside the sum, since that spending never touched your
+own money.
 
 Below that, the same total broken down by category, by day (each day measured against
 its budget), by city, and by what you paid with.
