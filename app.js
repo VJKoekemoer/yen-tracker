@@ -358,22 +358,14 @@ function budgetSummary(L = ledger()){
   const days = Math.max(1, dayNo(through));
   const spent = spends.filter(t => t.date <= through).reduce((a,t) => a + t.zarCost, 0);
 
+  // The budget is a cap, not a target — so no "you can still spend" projection;
+  // just what's been spent against what was allowed so far.
   let allowed = 0, wholeTrip = 0;
   for (let d = TRIP_START; d <= TRIP_END; d = addDays(d,1)){
     wholeTrip += budgetFor(d);
     if (d <= through) allowed += budgetFor(d);
   }
-  const totalSpent = spends.reduce((a,t) => a + t.zarCost, 0);
-
-  // What's left, shared across the remaining days in proportion to their budgets,
-  // so the flight home still gets its smaller share.
-  const remainingDays = TRIP_DAYS - days;
-  const remainingAllowance = wholeTrip - allowed;
-  const ratio = remainingAllowance > 0 ? (wholeTrip - totalSpent) / remainingAllowance : null;
-  return { daily, flying, days, spent, allowed, diff: allowed - spent, remainingDays, wholeTrip,
-           homeDayAhead: through < TRIP_END,
-           perNormalDay: ratio != null ? ratio * daily : null,
-           perFlyingDay: ratio != null ? ratio * flying : null };
+  return { daily, flying, days, spent, allowed, diff: allowed - spent, wholeTrip };
 }
 
 /* ============================================================
@@ -843,23 +835,6 @@ function renderBudgetCard(B){
   if (B.daily <= 0) return;
   const under = B.diff >= 0;
   const pct = B.allowed > 0 ? Math.min(100, B.spent / B.allowed * 100) : 0;
-  let ahead = '';
-  if (B.perNormalDay != null){
-    // The flight home is one of the remaining days but has its own smaller share
-    const normalDays = B.remainingDays - (B.homeDayAhead ? 1 : 0);
-    const splitHome = B.homeDayAhead && B.flying !== B.daily;
-    if (B.perNormalDay <= 0){
-      ahead = `Already past the whole-trip budget of ${R0(B.wholeTrip)}.`;
-    } else if (splitHome && normalDays > 0){
-      ahead = `To finish on budget: about <b>${R0(B.perNormalDay)} a day</b> for the next ` +
-        `${normalDays} ${normalDays===1?'day':'days'}, and about <b>${R0(B.perFlyingDay)}</b> on the last day (${prettyDate(TRIP_END)}).`;
-    } else if (splitHome){
-      ahead = `To finish on budget: about <b>${R0(B.perFlyingDay)}</b> on the last day.`;
-    } else {
-      ahead = `To finish on budget: about <b>${R0(B.perNormalDay)} a day</b> for the remaining ` +
-        `${B.remainingDays} ${B.remainingDays===1?'day':'days'}.`;
-    }
-  }
   c.className = 'budget-card' + (under ? '' : ' over');
   c.innerHTML =
     `<div class="bc-top"><span>Budget · ${R0(B.daily)} a day${B.flying !== B.daily ? ` · ${R0(B.flying)} flying days` : ''}</span>` +
@@ -867,7 +842,6 @@ function renderBudgetCard(B){
     `<div class="bc-main"><b>${R0(B.spent)}</b> of ${R0(B.allowed)} so far <span>(${B.days} ${B.days===1?'day':'days'})</span></div>` +
     `<div class="bs-bar"><div class="bs-fill" style="width:${pct.toFixed(1)}%"></div></div>` +
     `<div class="bc-verdict">${under ? `${R0(B.diff)} under budget` : `${R0(B.diff)} over budget`}</div>` +
-    (ahead ? `<div class="bc-ahead">${ahead}</div>` : '') +
     `<div class="bc-note">My own money only. Anything paid for with the gifted dollars doesn't count.</div>`;
 }
 
