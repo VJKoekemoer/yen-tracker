@@ -171,6 +171,16 @@ function money(v, cur){
 const R = v => money(v,'ZAR');
 // Whole rands, for budget figures where cents are just noise
 const R0 = v => 'R' + Math.round(Math.abs(v||0)).toLocaleString('en-ZA');
+
+// Round a list of amounts to whole rands so the rows still add up to the rounded
+// total — otherwise a breakdown can come out a rand or two off its own total.
+function roundAll(vals){
+  const out = vals.map(Math.floor);
+  let spare = Math.round(vals.reduce((a,b) => a+b, 0)) - out.reduce((a,b) => a+b, 0);
+  vals.map((v,i) => [v - Math.floor(v), i]).sort((a,b) => b[0] - a[0])
+      .forEach(([,i]) => { if (spare > 0){ out[i]++; spare--; } });
+  return out;
+}
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 
 function rate(cur){ return S.settings.rates[cur] || 1; }        // foreign per ZAR
@@ -195,7 +205,9 @@ function toast(msg){
    ============================================================ */
 
 function ledger(){
-  const cash = { jpy:{units:0,cost:0}, sgd:{units:0,cost:0}, usd:{units:0,cost:0} };
+  // gift = how many of the units in hand came from the gifted dollars (directly, or
+  // as currency they were changed into) — so a spend can say how much the gift paid.
+  const cash = { jpy:{units:0,cost:0,gift:0}, sgd:{units:0,cost:0,gift:0}, usd:{units:0,cost:0,gift:0} };
   const spendByWallet = {};
   let feesPaid = 0;          // ATM fees + FX margin, in rands
   const priced = [];         // every tx with zarCost / zarValue resolved
@@ -225,7 +237,7 @@ function ledger(){
       p.zarValue = market;
       p.fee      = Math.max(0, t.zarCost - market);
       feesPaid  += p.fee;
-      if (c){ c.units += t.amount; c.cost += t.zarCost; }
+      if (c){ c.units += t.amount; c.cost += t.zarCost; if (t.source === 'gift') c.gift += t.amount; }
       if (t.source === 'atm'){
         const k = card[t.card || 'fnbd'];   // older entries pre-date the card field
         if (k){ k.atm += t.zarCost; k.fee += p.fee; }
@@ -237,8 +249,12 @@ function ledger(){
       const avail = from ? Math.max(0, from.units) : 0;
       const basis = avail > 0 ? from.cost / avail : 0;
       const moved = basis * Math.min(t.fromAmount, avail);
-      if (from){ from.units -= t.fromAmount; from.cost = Math.max(0, from.cost - moved); }
-      if (to)  { to.units   += t.toAmount;   to.cost   += moved; }
+      // The gifted share travels with the money, converted at the counter's rate
+      const giftOut = avail > 0 ? from.gift / avail * Math.min(t.fromAmount, avail) : 0;
+      if (from){ from.units -= t.fromAmount; from.cost = Math.max(0, from.cost - moved);
+                 from.gift = Math.max(0, from.gift - giftOut); }
+      if (to)  { to.units   += t.toAmount;   to.cost   += moved;
+                 if (t.fromAmount > 0) to.gift += giftOut * (t.toAmount / t.fromAmount); }
       p.zarCost  = 0;
       p.zarValue = 0;
     }
@@ -258,6 +274,10 @@ function ledger(){
         // value the shortfall at market rather than pretending it was free.
         p.zarCost  = covered * basis + short / (t.spot || rate(t.cur));
         p.unfunded = short;
+        // How much of this spend's value the gifted dollars paid for
+        const giftUnits = avail > 0 ? covered * (c.gift / avail) : 0;
+        p.giftValue = giftUnits / (t.spot || rate(t.cur));
+        c.gift = Math.max(0, c.gift - giftUnits);
         // Let the balance go negative. That IS the signal something wasn't logged;
         // clamping it to zero hides the problem.
         c.units -= t.amount;
@@ -267,6 +287,7 @@ function ledger(){
         // Paying in rands at home: nothing to convert, so no margin
         const pct = w && t.cur !== 'ZAR' ? (S.settings[w.fx] || 0) : 0;
         p.zarCost = market * (1 + pct/100);
+        p.giftValue = 0;
         feesPaid += p.zarCost - market;
         if (card[t.wallet]){
           card[t.wallet].tap += p.zarCost;
@@ -394,15 +415,15 @@ function renderAdd(){
       const held  = Math.max(0, c.units);
       const basis = held > 0 ? c.cost/held : 0;
       if (held <= 0){
-        zarTxt = `${R(market)} at market rate · nothing recorded in your ${w.short} yet`;
+        zarTxt = `${R(market)} at market rate · nothing recorded in my ${w.short} yet`;
       } else if (amt > held){
         // part comes from the wallet, the rest is money we've no record of
         const cost = held*basis + (amt-held)/rate(cur);
-        zarTxt = `${R(cost)} · ⚠ ${money(amt-held,cur)} more than you're holding`;
+        zarTxt = `${R(cost)} · ⚠ ${money(amt-held,cur)} more than I'm holding`;
       } else if (basis <= 0){
-        zarTxt = `${R(market)} of value · gifted, so costs you nothing`;
+        zarTxt = `${R(market)} of value · gifted, so costs me nothing`;
       } else {
-        zarTxt = `${R(basis*amt)} · from your ${w.short}`;
+        zarTxt = `${R(basis*amt)} · from my ${w.short}`;
       }
     } else if (cur === 'ZAR'){
       zarTxt = `Paying in rands · no conversion fee`;
@@ -438,7 +459,7 @@ function buildAddChrome(){
     b.onclick = () => {
       draft.wallet=w.id; S.ui.wallet=w.id; save();
       if (CUR[currentCur()].dp === 0) draft.amount = draft.amount.split('.')[0];
-      if (w.danger) toast('MyMo is your emergency card — fees are steep');
+      if (w.danger) toast('MyMo is the emergency card — fees are steep');
       buildAddChrome(); renderAdd();
     };
     ww.appendChild(b);
@@ -505,9 +526,9 @@ function renderCash(){
   al.hidden = shorts.length === 0;
   if (shorts.length){
     const bits = shorts.map(([id,v]) => `<b>${money(v, W[id].cur)}</b> of ${W[id].label.toLowerCase()}`);
-    al.innerHTML = `You've spent ${bits.join(' and ')} more than you've recorded receiving. ` +
-      `Most likely an ATM withdrawal or an exchange that didn't get logged — add it and these ` +
-      `figures will correct themselves. Until then that cash is being valued at the market rate.`;
+    al.innerHTML = `Spent ${bits.join(' and ')} more than recorded as received. ` +
+      `Most likely an ATM withdrawal or an exchange that didn't get logged — adding it ` +
+      `corrects these figures. Until then, that cash is valued at the market rate.`;
   }
 
   // Yen is the main event, so it gets the big card. Yen are worth fractions of
@@ -515,26 +536,26 @@ function renderCash(){
   const costLine = (c, cur) => {
     const basis = c.units > 0 ? c.cost / c.units : 0;
     if (c.units <= 0)  return '';
-    if (basis <= 0)    return 'A gift — cost you nothing';
-    if (basis < 0.5)   return `Cost you ${R(basis*100)} per ${CUR[cur].sym}100`;
-    return `Cost you ${R(basis)} per ${CUR[cur].sym}1`;
+    if (basis <= 0)    return 'A gift — cost me nothing';
+    if (basis < 0.5)   return `Cost me ${R(basis*100)} per ${CUR[cur].sym}100`;
+    return `Cost me ${R(basis)} per ${CUR[cur].sym}1`;
   };
 
   const yen = L.cash.jpy;
   let runway = '';
   if (yen.units < 0){
-    runway = `You've spent more yen than you've recorded getting — see the note above.`;
+    runway = `More yen spent than recorded as received — see the note above.`;
   } else if (yen.units > 0){
     const perDay = burn('jpy');
     if (perDay > 0){
       const d = yen.units / perDay, left = daysLeft();
-      runway = `At your pace (about ${money(perDay,'JPY')} a day) this lasts roughly <b>${d.toFixed(0)} days</b>` +
-        (d < left ? ` — you'll want another ATM before the trip ends.` : ` — enough for the rest of the trip.`);
+      runway = `At my pace (about ${money(perDay,'JPY')} a day) this lasts roughly <b>${d.toFixed(0)} days</b>` +
+        (d < left ? ` — I'll need another ATM before the trip ends.` : ` — enough for the rest of the trip.`);
     } else {
-      runway = `Log a few cash spends and this will estimate when you next need an ATM.`;
+      runway = `Log a few cash spends and this will estimate when the next ATM is needed.`;
     }
   } else {
-    runway = `Nothing recorded yet. After your first ATM, tap <b>I got cash</b>.`;
+    runway = `Nothing recorded yet. After the first ATM, tap <b>I got cash</b>.`;
   }
   const py = $('#pocketYen');
   py.className = 'pocket' + (yen.units < 0 ? ' short' : '');
@@ -562,9 +583,9 @@ function renderCash(){
    One door in, asking the question in your words rather than the app's. */
 
 function dlgGotCash(){
-  modal('How did you get it?', `
+  modal('Where did it come from?', `
     <div class="choose">
-      <button type="button" id="gAtm"><span>🏧</span><div><b>From an ATM</b><small>With your FNB or MyMo card</small></div></button>
+      <button type="button" id="gAtm"><span>🏧</span><div><b>From an ATM</b><small>With my FNB or MyMo card</small></div></button>
       <button type="button" id="gFx"><span>🔁</span><div><b>At a money changer</b><small>Swapped one currency for another</small></div></button>
       <button type="button" id="gIn"><span>🎁</span><div><b>I brought it or was given it</b><small>Like the gifted US dollars</small></div></button>
     </div>`);
@@ -594,9 +615,9 @@ function dlgAtm(){
       </div>
     </div>
     <div class="f">
-      <label>Rands taken off your account <span style="color:var(--faint);font-weight:400">— if you know it</span></label>
+      <label>Rands taken off my account <span style="color:var(--faint);font-weight:400">— if known</span></label>
       <input type="number" id="aZar" inputmode="decimal" placeholder="leave blank to estimate">
-      <div class="hint">Check your banking app if you can. An exact figure makes every rand total in this app exact too.</div>
+      <div class="hint">Check the banking app if possible. An exact figure makes every rand total in this app exact too.</div>
     </div>
     <div class="f"><label>Date</label><input type="date" id="aDate" value="${draft.date}" min="${TRIP_START}" max="${TRIP_END}"></div>
     <div class="calc" id="aCalc"></div>
@@ -611,11 +632,11 @@ function dlgAtm(){
     const zar = parseFloat($('#aZar').value) || est;
     const fee = Math.max(0, zar - market);
     $('#aCalc').innerHTML = amt > 0
-      ? `Market value <b>${R(market)}</b><br>You pay <b>${R(zar)}</b>` +
+      ? `Market value <b>${R(market)}</b><br>Cost to me <b>${R(zar)}</b>` +
         `${$('#aZar').value ? '' : ` <span style="color:var(--faint)">(estimated: ${pct}% margin + ${R(s.atmFeeZar)} fee)</span>`}` +
         `<br>Cost of this cash: <b class="hi">${R(fee)}</b> — that's ${(fee/market*100).toFixed(1)}%` +
-        `<br>Each ${CUR[cur].sym}1 in your pocket cost <b>${R(zar/amt)}</b>`
-      : 'Enter the amount the machine gave you.';
+        `<br>Each ${CUR[cur].sym}1 in my pocket cost <b>${R(zar/amt)}</b>`
+      : 'Enter the amount the machine gave out.';
   };
   ['aCard','aCur','aAmt','aZar'].forEach(i => $('#'+i).oninput = recalc);
   $('#aCard').onchange = recalc; $('#aCur').onchange = recalc;
@@ -639,8 +660,8 @@ function dlgAtm(){
 function dlgFx(){
   const L = ledger();
   modal('At a money changer', `
-    <p class="hint" style="margin:0 0 14px">Only if you actually hand cash over a counter. Dollars you spend
-      as dollars don't belong here — log those on the Add screen against <b>$ cash</b>.</p>
+    <p class="hint" style="margin:0 0 14px">Only for cash handed over a counter. Dollars spent as dollars
+      don't belong here — log those on the Add screen against <b>$ cash</b>.</p>
     <div class="f2">
       <div class="f"><label>From</label>
         <select id="xFrom">
@@ -677,16 +698,16 @@ function dlgFx(){
     const f = parseFloat($('#xFrA').value)||0, t = parseFloat($('#xToA').value)||0;
     const held = ledger().cash[fromId].units;
     if (!(f>0 && t>0))
-      return $('#xCalc').innerHTML = `Enter both sides and I'll tell you what rate you were given. You're holding <b>${money(held,fCur)}</b>.`;
+      return $('#xCalc').innerHTML = `Enter both amounts to see the rate. Currently holding <b>${money(held,fCur)}</b>.`;
 
     const got = t/f, mkt = rate(tCur)/rate(fCur);
     const lossPct = (1 - got/mkt) * 100;
     $('#xCalc').innerHTML =
-      `You got <b>${got.toFixed(tCur==='JPY'?2:4)} ${tCur}</b> per ${CUR[fCur].sym}1. Market is about <b>${mkt.toFixed(tCur==='JPY'?2:4)}</b>.<br>` +
+      `Got <b>${got.toFixed(tCur==='JPY'?2:4)} ${tCur}</b> per ${CUR[fCur].sym}1. Market is about <b>${mkt.toFixed(tCur==='JPY'?2:4)}</b>.<br>` +
       (lossPct > 0.5
-        ? `That counter took roughly <b class="hi">${lossPct.toFixed(1)}%</b> — worth shopping around if you've more to change.`
+        ? `That counter took roughly <b class="hi">${lossPct.toFixed(1)}%</b> — worth shopping around if there's more to change.`
         : `<b style="color:var(--good)">Good rate.</b>`) +
-      (f > held ? `<br><b class="hi">⚠ That's more than the ${money(held,fCur)} you're holding.</b>` : '');
+      (f > held ? `<br><b class="hi">⚠ That's more than the ${money(held,fCur)} I'm holding.</b>` : '');
   };
   ['xFrA','xToA'].forEach(i => $('#'+i).oninput = recalc);
   $('#xFrom').onchange = recalc;
@@ -706,7 +727,7 @@ function dlgFx(){
 }
 
 function dlgCashIn(){
-  modal('Cash you brought or were given', `
+  modal('Cash I brought or was given', `
     <div class="f2">
       <div class="f"><label>Currency</label>
         <select id="cCur"><option value="USD">US dollars</option><option value="JPY">Japanese yen</option><option value="SGD">Singapore dollars</option></select>
@@ -719,10 +740,10 @@ function dlgCashIn(){
         <option value="gift">A gift — cost me nothing</option>
         <option value="bought">I bought it before leaving</option>
       </select>
-      <div class="hint">Gifted cash still counts towards what you've spent, but is kept out of "money out of your own pocket".</div>
+      <div class="hint">Gifted cash still counts towards what I've spent, but not towards my own money or the budget.</div>
     </div>
     <div class="f" id="cZarWrap" hidden>
-      <label>What you paid for it (rands)</label>
+      <label>What I paid for it (rands)</label>
       <input type="number" id="cZar" inputmode="decimal" placeholder="9500">
     </div>
     <div class="f"><label>Date</label><input type="date" id="cDate" value="${TRIP_START}" min="${TRIP_START}" max="${TRIP_END}"></div>
@@ -750,53 +771,68 @@ function dlgCashIn(){
 
 let seg = 'cat';
 
+/* Everything on this tab measures one thing — my own money — so every view adds up
+   to the same total as the budget card. "How it adds up" is the only place the
+   full value of what I bought appears, to show how the two relate.             */
+
 function renderSpending(){
   const L = ledger();
   const spends = L.priced.filter(t => t.kind === 'spend');
-  const cost = spends.reduce((a,t)=>a+t.zarCost,0);
-  const val  = spends.reduce((a,t)=>a+t.zarValue,0);
-  const ownPocket = cost;  // cost basis already excludes gifted cash
-  const B = budgetSummary(L);
 
-  renderBudgetCard(B);
-
-  $('#statTotals').innerHTML =
-    `<div><div class="lbl">Spent so far</div><div class="val">${R(val)}</div></div>` +
-    `<div><div class="lbl">Out of your pocket</div><div class="val">${R(ownPocket)}</div></div>` +
-    `<div><div class="lbl">Own money a day</div><div class="val">${R(B.spent / B.days)}</div></div>` +
-    `<div><div class="lbl">Entries</div><div class="val">${spends.length}</div></div>`;
-
-  renderFees(L);
+  renderBudgetCard(budgetSummary(L));
+  renderAddsUp(spends);
 
   const body = $('#statBody');
   if (!spends.length){
-    body.innerHTML = `<div class="empty-msg">Nothing logged yet.<br>Head to the Add tab and record your first spend.</div>`;
+    body.innerHTML = `<div class="empty-msg">Nothing logged yet.<br>Head to the Add tab to record the first spend.</div>`;
     return;
   }
 
   if (seg === 'day'){ renderDayBars(spends); return; }
 
+  const own = spends.reduce((a,t) => a + t.zarCost, 0);
   const groups = {};
   for (const t of spends){
     let k, sub;
     if (seg==='cat')       { k = CAT[t.cat]?.label || t.cat; sub = CAT[t.cat]?.ic || ''; }
     else if (seg==='city') { k = t.city || 'Unrecorded'; }
     else                   { k = W[t.wallet]?.label || t.wallet; }
-    groups[k] = groups[k] || { val:0, n:0, sub };
-    groups[k].val += t.zarValue;
-    groups[k].n++;
+    groups[k] = groups[k] || { val:0, gift:0, sub };
+    groups[k].val  += t.zarCost;
+    groups[k].gift += t.giftValue || 0;
   }
 
-  const entries = Object.entries(groups).sort((a,b)=>b[1].val - a[1].val);
-  const max = Math.max(...entries.map(e=>e[1].val));
-  body.innerHTML = entries.map(([k,g]) => {
-    const pct = (g.val/val*100);
+  const entries = Object.entries(groups).sort((a,b) => b[1].val - a[1].val);
+  const shown = roundAll(entries.map(e => e[1].val));
+  const max = Math.max(1, ...entries.map(e => e[1].val));
+  body.innerHTML = entries.map(([k,g], i) => {
+    const sub = g.val < 0.5 && g.gift > 0 ? 'All paid for with the gifted dollars'
+              : own > 0 ? `${(g.val/own*100).toFixed(0)}% of my money` : '';
     return `<div class="bar">
-      <div class="bl"><span>${g.sub?g.sub+' ':''}${esc(k)}</span><b>${R(g.val)}</b></div>
+      <div class="bl"><span>${g.sub?g.sub+' ':''}${esc(k)}</span><b>${R0(shown[i])}</b></div>
       <div class="bt"><div class="bf" style="width:${(g.val/max*100).toFixed(1)}%"></div></div>
-      <div class="sub">${g.n} ${g.n===1?'entry':'entries'} · ${pct.toFixed(0)}% of spend</div>
+      <div class="sub">${sub}</div>
     </div>`;
   }).join('');
+}
+
+// The one relationship that genuinely adds up: what things were worth, less what
+// the gift paid for, plus what it cost to get at the money, is my own money.
+function renderAddsUp(spends){
+  const box = $('#addsUp');
+  box.hidden = !spends.length;
+  if (!spends.length) return;
+  const worth = Math.round(spends.reduce((a,t) => a + t.zarValue, 0));
+  const gift  = Math.round(spends.reduce((a,t) => a + (t.giftValue || 0), 0));
+  const own   = Math.round(spends.reduce((a,t) => a + t.zarCost, 0));
+  // Worked from the rounded figures so the three lines visibly sum to the total
+  const fees  = own - worth + gift;
+  box.innerHTML =
+    `<div class="au-hd">How it adds up</div>` +
+    `<div class="au-row"><span>What I bought was worth</span><b>${R0(worth)}</b></div>` +
+    `<div class="au-row"><span>Paid for with the gifted dollars</span><b>− ${R0(gift)}</b></div>` +
+    `<div class="au-row"><span>Bank fees and exchange costs</span><b>${fees < 0 ? '−' : '+'} ${R0(fees)}</b></div>` +
+    `<div class="au-row au-total"><span>My own money</span><b>${R0(own)}</b></div>`;
 }
 
 function renderBudgetCard(B){
@@ -811,14 +847,14 @@ function renderBudgetCard(B){
     const normalDays = B.remainingDays - (B.homeDayAhead ? 1 : 0);
     const splitHome = B.homeDayAhead && B.flying !== B.daily;
     if (B.perNormalDay <= 0){
-      ahead = `You're already past the whole-trip budget of ${R0(B.wholeTrip)}.`;
+      ahead = `Already past the whole-trip budget of ${R0(B.wholeTrip)}.`;
     } else if (splitHome && normalDays > 0){
-      ahead = `To finish on budget you can spend about <b>${R0(B.perNormalDay)} a day</b> for the next ` +
-        `${normalDays} ${normalDays===1?'day':'days'}, and about <b>${R0(B.perFlyingDay)}</b> on your last day (${prettyDate(TRIP_END)}).`;
+      ahead = `To finish on budget: about <b>${R0(B.perNormalDay)} a day</b> for the next ` +
+        `${normalDays} ${normalDays===1?'day':'days'}, and about <b>${R0(B.perFlyingDay)}</b> on the last day (${prettyDate(TRIP_END)}).`;
     } else if (splitHome){
-      ahead = `To finish on budget you can spend about <b>${R0(B.perFlyingDay)}</b> on your last day.`;
+      ahead = `To finish on budget: about <b>${R0(B.perFlyingDay)}</b> on the last day.`;
     } else {
-      ahead = `To finish on budget you can spend about <b>${R0(B.perNormalDay)} a day</b> for the remaining ` +
+      ahead = `To finish on budget: about <b>${R0(B.perNormalDay)} a day</b> for the remaining ` +
         `${B.remainingDays} ${B.remainingDays===1?'day':'days'}.`;
     }
   }
@@ -830,7 +866,7 @@ function renderBudgetCard(B){
     `<div class="bs-bar"><div class="bs-fill" style="width:${pct.toFixed(1)}%"></div></div>` +
     `<div class="bc-verdict">${under ? `${R0(B.diff)} under budget` : `${R0(B.diff)} over budget`}</div>` +
     (ahead ? `<div class="bc-ahead">${ahead}</div>` : '') +
-    `<div class="bc-note">Your own money only. Anything paid for with the gifted dollars doesn't count.</div>`;
+    `<div class="bc-note">My own money only. Anything paid for with the gifted dollars doesn't count.</div>`;
 }
 
 // Day view: every trip day so far against the daily budget, with a marker
@@ -844,18 +880,19 @@ function renderDayBars(spends){
   const days = [];
   for (let d = TRIP_START; d <= last; d = addDays(d,1)) days.push(d);
   const scale = Math.max(1, ...days.map(budgetFor), ...Object.values(byDay));
+  const shown = roundAll(days.map(d => byDay[d] || 0));
   $('#statBody').innerHTML =
-    `<p class="tip" style="margin:0 2px 12px">Your own money each day${on ? ', against that day\'s budget' : ''}. The gifted dollars don't count here.</p>` +
-    days.slice().reverse().map(d => {
+    `<p class="tip" style="margin:0 2px 12px">My own money each day${on ? ', against that day\'s budget' : ''}. The gifted dollars don't count here.</p>` +
+    days.map((d, i) => [d, shown[i]]).reverse().map(([d, shownV]) => {
     const v = byDay[d] || 0;
     const allow = budgetFor(d);
-    const diff = allow - v;
+    const diff = allow - shownV;
     const verdict = on
       ? (diff >= 0 ? `<span class="good-t">${R0(diff)} under</span>` : `<span class="over-t">${R0(diff)} over</span>`) +
         ` <span>of ${R0(allow)}${isFlyingDay(d) ? ' · flying day' : ''}</span>`
       : '';
     return `<div class="bar">
-      <div class="bl"><span>Day ${dayNo(d)} · ${prettyDate(d)}${ITIN[d] ? ' · '+esc(ITIN[d]) : ''}</span><b>${R0(v)}</b></div>
+      <div class="bl"><span>Day ${dayNo(d)} · ${prettyDate(d)}${ITIN[d] ? ' · '+esc(ITIN[d]) : ''}</span><b>${R0(shownV)}</b></div>
       <div class="bt">
         <div class="bf${on && v > allow ? ' over' : ''}" style="width:${(v/scale*100).toFixed(1)}%"></div>
         ${on ? `<div class="bmark" style="left:${(allow/scale*100).toFixed(1)}%"></div>` : ''}
@@ -863,21 +900,6 @@ function renderDayBars(spends){
       <div class="sub">${verdict}</div>
     </div>`;
   }).join('');
-}
-
-function renderFees(L){
-  const any = L.priced.length > 0;
-  $('#feeWrap').hidden = !any;
-  if (!any) return;
-  const spendVal = L.priced.filter(t=>t.kind==='spend').reduce((a,t)=>a+t.zarValue,0);
-  const atm = L.priced.filter(t=>t.kind==='fund').reduce((a,t)=>a+(t.fee||0),0);
-  const cardFee = L.priced.filter(t=>t.kind==='spend' && W[t.wallet]?.type==='card')
-                          .reduce((a,t)=>a+(t.zarCost-t.zarValue),0);
-  $('#feeBox').innerHTML =
-    `<div class="fr"><span>Spent, at market rate</span><b>${R(spendVal)}</b></div>` +
-    `<div class="fr"><span>ATM fees and cash exchange margin</span><b>${R(atm)}</b></div>` +
-    `<div class="fr"><span>Card conversion fees</span><b>${R(cardFee)}</b></div>` +
-    `<div class="fr big"><span>Cost of getting at your money</span><b>${R(atm+cardFee)}</b></div>`;
 }
 
 /* ============================================================
@@ -961,7 +983,7 @@ function renderEntries(){
     .map(w => ({ w, k: L.card[w.id] || { tap:0, atm:0 } }))
     .filter(({k}) => k.tap + k.atm > 0);
   $('#acctBox').innerHTML = !used.length ? '' :
-    `<h2 class="sec" style="margin-top:6px">Off your accounts</h2>` +
+    `<h2 class="sec" style="margin-top:6px">Off my accounts</h2>` +
     used.map(({w,k}) => {
       const parts = [];
       if (k.tap > 0) parts.push(`Tapped ${R(k.tap)}`);
@@ -969,8 +991,8 @@ function renderEntries(){
       return `<div class="wcard${w.danger?' danger':''}"><div class="top"><span class="nm">${esc(w.acct)}</span>` +
         `<span class="bal">${R(k.tap + k.atm)}</span></div><div class="sub"><span>${parts.join(' · ')}</span></div></div>`;
     }).join('') +
-    `<p class="tip" style="margin-top:4px">These should match your banking app. They're higher than your spending
-      because cash you've drawn but not yet spent is still in your pocket — it only counts as spent when you hand it over.</p>`;
+    `<p class="tip" style="margin-top:4px">These should match my banking app. They're higher than my spending
+      because cash I've drawn but not yet spent is still in my pocket — it only counts as spent when I hand it over.</p>`;
 
   const list = $('#txList');
   const keep = t => entryFilter === 'all' ? true
@@ -1039,9 +1061,9 @@ function renderBackup(){
   bb.className = 'backup-box' + (ageDays > 2 ? ' stale' : '');
   bb.innerHTML = last
     ? `Last backed up <b>${last.toLocaleString('en-ZA',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</b>` +
-      (ageDays > 2 ? ` — that's ${Math.floor(ageDays)} days ago. Worth doing again next time you have signal.`
+      (ageDays > 2 ? ` — that's ${Math.floor(ageDays)} days ago. Worth doing again next time there's signal.`
                    : ` · ${S.tx.length} entries and ${S.notes.length} notes safe.`)
-    : `<b>Not backed up yet.</b> Everything lives on this phone only. Tap "Back up to Drive" whenever you have a connection — it takes two seconds.`;
+    : `<b>Not backed up yet.</b> Everything lives on this phone only. Tap "Back up to Drive" whenever there's a connection — it takes two seconds.`;
 }
 
 /* ---------- settings ---------- */
@@ -1055,7 +1077,7 @@ function dlgSettings(){
       <div class="f"><label>First and last day</label><input type="number" id="sTravel" inputmode="numeric" value="${s.travelDayBudget}"></div>
     </div>
     <div class="f" style="margin-top:-6px">
-      <div class="hint">The first and last days are mostly on a plane, so they get less. Counts only your own money. Anything paid for with the gifted dollars doesn't count, whether you spend them as dollars or change them into yen. ATM and card fees do count. Set the daily figure to 0 to hide the budget.</div></div>
+      <div class="hint">The first and last days are mostly travelling, so they get less. Counts only my own money. Anything paid for with the gifted dollars doesn't count, whether spent as dollars or changed into yen. ATM and card fees do count. Set the daily figure to 0 to hide the budget.</div></div>
 
     <h2 class="sec">Exchange rates</h2>
     <div class="calc" id="rateStatus"></div>
@@ -1067,38 +1089,38 @@ function dlgSettings(){
     </div>
     <div class="f"><label>US $ per R1</label><input type="number" step="0.0001" id="sUSD" value="${s.rates.USD}"></div>
 
-    <h2 class="sec">Your bank's fees</h2>
+    <h2 class="sec">My bank's fees</h2>
     <div class="f"><label>Flat ATM fee per withdrawal (rands)</label><input type="number" id="sAtm" value="${s.atmFeeZar}">
-      <div class="hint">Same fee whether you draw ¥5,000 or ¥50,000 — which is exactly why fewer, larger withdrawals win.</div></div>
+      <div class="hint">Same fee whether I draw ¥5,000 or ¥50,000 — which is exactly why fewer, larger withdrawals win.</div></div>
     <div class="f2">
       <div class="f"><label>FNB debit margin %</label><input type="number" step="0.05" id="sD" value="${s.debitFxPct}"></div>
       <div class="f"><label>FNB credit margin %</label><input type="number" step="0.05" id="sC" value="${s.creditFxPct}"></div>
     </div>
     <div class="f"><label>MyMo margin %</label><input type="number" step="0.05" id="sM" value="${s.mymoFxPct}">
-      <div class="hint">Confirm these three with FNB and Standard Bank before you fly — the app's rand totals are only as good as these numbers.</div></div>
+      <div class="hint">Confirm these three with FNB and Standard Bank before flying — the app's rand totals are only as good as these numbers.</div></div>
 
     <button class="mbtn" id="sGo" type="button">Save</button>
 
     <h2 class="sec">App version</h2>
-    <div class="calc">You're running <b>${APP_VERSION}</b>. Updates arrive on their own when
-      you're online — this button just hurries one along.</div>
+    <div class="calc">Running <b>${APP_VERSION}</b>. Updates arrive on their own when
+      online — this button just hurries one along.</div>
     <button class="mbtn ghost" id="sUpdate" type="button">Check for an update now</button>
 
     <h2 class="sec">Trying it out</h2>
     <button class="mbtn ghost" id="sDemo" type="button">Load a sample trip to play with</button>
     <div class="hint" style="margin-top:8px">Fills the app with five made-up days — the gifted dollars,
-      a withdrawal at Changi and one at Kansai, and a handful of spends — so you can see how everything
+      a withdrawal at Changi and one at Kansai, and a handful of spends — to see how everything
       behaves. It only works on an empty app, so it can never overwrite real entries.</div>
 
     <button class="mbtn ghost" id="sWipe" type="button" style="margin-top:14px;color:var(--accent-t)">Clear everything and start fresh</button>
-    <div class="hint" style="margin-top:8px">Use this when you've finished playing and the trip is about
-      to start. Back up first if there's anything you want to keep.</div>
+    <div class="hint" style="margin-top:8px">Use this after playing, just before the trip starts.
+      Back up first to keep anything.</div>
   `);
 
   const status = () => {
     $('#rateStatus').innerHTML = s.ratesAt
       ? `Rates last refreshed <b>${new Date(s.ratesAt).toLocaleDateString('en-ZA',{day:'numeric',month:'short'})}</b>. They're stored on the phone, so everything keeps working offline.`
-      : `<b class="hi">Using rough starting rates.</b> Refresh once before you fly, and they'll be cached for the whole trip.`;
+      : `<b class="hi">Using rough starting rates.</b> Refresh once before flying, and they'll be cached for the whole trip.`;
   };
   status();
 
@@ -1119,7 +1141,7 @@ function dlgSettings(){
     setTimeout(() => {
       if (!reloadingForUpdate){
         b.textContent = 'Check for an update now';
-        toast(`You're on the latest (${APP_VERSION})`);
+        toast(`On the latest version (${APP_VERSION})`);
       }
     }, 3000);
   };
@@ -1129,13 +1151,13 @@ function dlgSettings(){
       closeModal(); renderAll(); show('spending');
       toast('Sample trip loaded — have a play');
     } else {
-      toast(`Clear your ${S.tx.length} entries first`);
+      toast(`Clear the ${S.tx.length} entries first`);
     }
   };
 
   $('#sWipe').onclick = () => {
     if (!confirm(`Delete all ${S.tx.length} entries and ${S.notes.length} notes? ` +
-                 `Your rates and fee settings stay put.`)) return;
+                 `The rates, fees and budget settings stay put.`)) return;
     S.tx = []; S.notes = []; S.lastBackup = null; save(); closeModal(); renderAll(); show('add');
     toast('Cleared — ready for the trip');
   };
@@ -1269,7 +1291,7 @@ function closeModal(){ $('#modalBack').hidden = true; }
 
 function dlgCity(){
   const cur = draft.city || ITIN[draft.date];
-  modal('Where are you?', `
+  modal('Which city?', `
     <div class="f"><label>Date</label>
       <input type="date" id="pDate" value="${draft.date}" min="${TRIP_START}" max="${TRIP_END}"></div>
     <div class="picklist">${
@@ -1299,8 +1321,12 @@ function seedDemo(){
     add({ kind:'spend', date, wallet, cur, amount, cat, city, note, spot: rate(cur) });
 
   add({kind:'fund', date:'2026-10-05', wallet:'usd', cur:'USD', amount:500, zarCost:0, spot:rate('USD'), source:'gift'});
-  add({kind:'fund', date:'2026-10-06', wallet:'sgd', cur:'SGD', amount:50,  zarCost:733,  spot:rate('SGD'), source:'atm'});
-  add({kind:'fund', date:'2026-10-07', wallet:'jpy', cur:'JPY', amount:50000, zarCost:5266, spot:rate('JPY'), source:'atm'});
+  // Priced from today's rates and the fee settings, so the sample never drifts into
+  // showing cash that was somehow cheaper than the market rate.
+  const atmCost = (amt, cur) => Math.round(
+    amt / rate(cur) * (1 + S.settings.debitFxPct/100) + S.settings.atmFeeZar);
+  add({kind:'fund', date:'2026-10-06', wallet:'sgd', cur:'SGD', amount:50,    zarCost:atmCost(50,'SGD'),    spot:rate('SGD'), source:'atm', card:'fnbd'});
+  add({kind:'fund', date:'2026-10-07', wallet:'jpy', cur:'JPY', amount:50000, zarCost:atmCost(50000,'JPY'), spot:rate('JPY'), source:'atm', card:'fnbd'});
 
   sp('2026-10-06','sgd','SGD',18.50,'food','Singapore','Lunch at Jewel');
   sp('2026-10-06','fnbd','SGD',12.00,'transport','Singapore','Grab to Gardens');

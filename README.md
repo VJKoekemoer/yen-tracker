@@ -122,16 +122,28 @@ Once gift yen and ATM yen are mixed in your purse, each spend counts only its pa
 share. ATM fees and card fees do count, because that's your money too. Change the
 figure, or set it to 0 to hide it, under Backup → Rates, fees and budget.
 
-That's why a day's budget figure can be lower than what the Entries tab says you spent
-that day: Entries shows what everything was worth, the budget shows what it cost you.
+Everything on the Spending tab measures that same thing — **my own money** — so every
+figure on it adds up to the same total as the budget card.
 
-Below that, totals by category, by day (each day measured against the budget), by city,
-and by what you paid with. Two headline numbers:
-- **Spent so far** — the market value of everything you've bought
-- **Out of your pocket** — what it genuinely cost you, including ATM fees, card
-  conversion margins, and excluding the gifted dollars
+**How it adds up** shows how that total relates to the full value of what you bought:
 
-At the bottom, what getting at your money has cost you in ATM fees and card margins.
+> What I bought was worth **R3,009**
+> − paid for with the gifted dollars **R349**
+> + bank fees and exchange costs **R118**
+> = **My own money R2,778**
+
+(Figures from the sample trip.) The fees line is the ATM fees and card conversion margins
+on what you've spent so far; fees on cash still in your pocket join it as you spend that
+cash.
+
+Below that, the same total broken down by category, by day (each day measured against
+its budget), by city, and by what you paid with.
+
+That's why a day's figure here can be lower than what the Entries tab says you spent
+that day: Entries shows what everything was worth, Spending shows what it cost you.
+
+The app itself talks in the first person — "my money", "my pocket" — since you're the
+only one using it.
 
 ### Entries — everything you've logged
 Every entry, newest first, grouped by day. Each line shows the amount in the currency

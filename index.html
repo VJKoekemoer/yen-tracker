@@ -63,7 +63,7 @@
 
   <!-- ============ CASH ============ -->
   <section class="view" id="view-cash" hidden>
-    <header class="hdr"><div><h1>Cash</h1><div class="hdr-sub">The money in your pocket</div></div></header>
+    <header class="hdr"><div><h1>Cash</h1><div class="hdr-sub">The money in my pocket</div></div></header>
 
     <div class="alert" id="shortAlert" hidden></div>
 
@@ -71,18 +71,19 @@
     <div class="pocket-row" id="pocketOther"></div>
 
     <button class="save-btn" id="btnGotCash" type="button">＋ I got cash</button>
-    <div class="under-btn">After an ATM, a money changer, or cash you brought along</div>
+    <div class="under-btn">After an ATM, a money changer, or cash I brought along</div>
 
     <p class="tip">At the ATM, always choose to be charged in <b>yen</b>, never rands. Choosing rands adds a hidden 3–7% markup.</p>
   </section>
 
   <!-- ============ SPENDING ============ -->
   <section class="view" id="view-spending" hidden>
-    <header class="hdr"><div><h1>Spending</h1><div class="hdr-sub">Where your money went</div></div></header>
+    <header class="hdr"><div><h1>Spending</h1><div class="hdr-sub">Where my money went</div></div></header>
 
     <div class="budget-card" id="budgetCard"></div>
 
-    <div class="totals" id="statTotals"></div>
+    <div class="adds" id="addsUp"></div>
+
     <div class="seg" id="statSeg">
       <button class="on" data-seg="cat">Category</button>
       <button data-seg="day">Day</button>
@@ -90,16 +91,11 @@
       <button data-seg="wallet">Paid with</button>
     </div>
     <div id="statBody"></div>
-
-    <div id="feeWrap">
-      <h2 class="sec">What getting at your money cost</h2>
-      <div class="fee-box" id="feeBox"></div>
-    </div>
   </section>
 
   <!-- ============ ENTRIES ============ -->
   <section class="view" id="view-entries" hidden>
-    <header class="hdr"><div><h1>Entries</h1><div class="hdr-sub">Everything you've logged, in both currencies</div></div></header>
+    <header class="hdr"><div><h1>Entries</h1><div class="hdr-sub">Everything I've logged, in both currencies</div></div></header>
 
     <div id="acctBox"></div>
 
@@ -121,10 +117,10 @@
       <button class="chip-city" id="noteCityBtn" type="button">—</button>
     </header>
 
-    <textarea id="noteText" rows="4" placeholder="A receipt worth keeping, a cost to split with someone later, an ATM that refused the card, something to sort out when you're home…"></textarea>
+    <textarea id="noteText" rows="4" placeholder="A receipt worth keeping, a cost to split with someone later, an ATM that refused the card, something to sort out when I'm home…"></textarea>
     <button class="save-btn" id="addNoteBtn" type="button" disabled>Add note</button>
 
-    <p class="tip">Notes are dated and saved with everything else — they're in your backups and
+    <p class="tip">Notes are dated and saved with everything else — they're in my backups and
       in the spreadsheet export, so nothing gets lost between here and home.</p>
 
     <h2 class="sec" id="notesHd" hidden>Written so far</h2>
@@ -147,7 +143,7 @@
     <div class="actions" style="margin-top:0">
       <button class="act" id="btnSettings" type="button"><span>⚙️</span>Rates, fees and budget</button>
     </div>
-    <p class="tip">Also in there: the app version, a sample trip to play with, and clearing everything before you fly.</p>
+    <p class="tip">Also in there: the app version, a sample trip to play with, and clearing everything before flying.</p>
   </section>
 
   <!-- ============ TAB BAR ============ -->
