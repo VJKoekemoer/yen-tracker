@@ -61,7 +61,7 @@ body::before{
   flex:1; display:flex; flex-direction:column;
   padding:calc(env(safe-area-inset-top) + 14px) 16px calc(var(--tabh) + env(safe-area-inset-bottom) + 16px);
 }
-#view-cash,#view-stats,#view-data,#view-notes{overflow-y:auto}
+#view-cash,#view-spending,#view-entries,#view-notes,#view-backup{overflow-y:auto}
 
 /* ---- notes ---- */
 #noteText{
@@ -88,6 +88,47 @@ body::before{
 .hdr{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;min-height:36px}
 .hdr-day{font-size:16px;font-weight:650}
 .hdr-sub{font-size:12px;color:var(--faint)}
+.hdr h1 + .hdr-sub{margin-top:2px}
+
+/* ---- day stepper on the Add screen ---- */
+.daynav{display:flex;align-items:center;gap:4px;flex:1;min-width:0}
+.dnav{
+  flex:0 0 auto;width:36px;height:36px;border-radius:10px;
+  background:var(--card);border:1px solid var(--line);
+  font-size:22px;line-height:1;color:var(--ink);padding-bottom:3px
+}
+.dnav:disabled{color:var(--faint);opacity:.45}
+.dlabel{position:relative;flex:1;min-width:0;text-align:center;padding:0 2px}
+.dlabel .hdr-sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The real date input sits invisibly over the label, so a tap opens the phone's picker */
+.dlabel input{position:absolute;inset:0;width:100%;height:100%;opacity:0;border:0;padding:0;margin:0;cursor:pointer}
+
+/* ---- budget: strip on Add, card on Spending ---- */
+.budget-strip{
+  width:100%;text-align:left;background:var(--card);border:1px solid var(--line);
+  border-radius:11px;padding:6px 11px 7px;margin-top:2px;font-size:12px;color:var(--dim)
+}
+.bs-row{display:flex;justify-content:space-between;gap:8px;margin-bottom:5px}
+.bs-row b{color:var(--ink);font-variant-numeric:tabular-nums}
+.bs-bar{height:5px;background:var(--bg2);border-radius:3px;overflow:hidden}
+.bs-fill{height:100%;background:var(--good);border-radius:3px}
+.over .bs-fill{background:var(--accent)}
+.over-t{color:var(--accent-t)}
+.good-t{color:var(--good)}
+
+.budget-card{
+  background:var(--card);border:1px solid var(--line);border-radius:14px;
+  padding:13px 15px;margin:8px 0 12px
+}
+.budget-card.over{border-color:var(--accent)}
+.bc-top{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--faint)}
+.bc-main{font-size:14px;color:var(--dim);margin:6px 0 8px}
+.bc-main b{font-size:20px;color:var(--ink);font-variant-numeric:tabular-nums}
+.bc-main span{font-size:12px;color:var(--faint)}
+.bc-verdict{font-size:14px;font-weight:650;margin-top:9px;color:var(--good)}
+.budget-card.over .bc-verdict{color:var(--accent-t)}
+.bc-ahead{font-size:12.5px;color:var(--dim);margin-top:4px;line-height:1.5}
+.bc-ahead b{color:var(--ink)}
 .chip-city{
   background:var(--card);border:1px solid var(--line);border-radius:999px;
   padding:7px 13px;font-size:13px;font-weight:600;color:var(--ink);max-width:52%;
@@ -95,13 +136,13 @@ body::before{
 }
 
 /* ---- amount ---- */
-.amount-wrap{display:flex;align-items:baseline;justify-content:center;gap:6px;margin-top:14px}
+.amount-wrap{display:flex;align-items:baseline;justify-content:center;gap:6px;margin-top:8px}
 .amount-cur{font-size:26px;color:var(--dim);font-weight:600}
 .amount{font-size:52px;font-weight:700;letter-spacing:-.02em;line-height:1;font-variant-numeric:tabular-nums}
 .amount-zar{text-align:center;color:var(--faint);font-size:13px;margin-top:7px;min-height:18px;font-variant-numeric:tabular-nums}
 
 /* ---- categories ---- */
-.cats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:16px 0 10px}
+.cats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:12px 0 8px}
 .cats button{
   background:var(--card);border:1px solid var(--line);border-radius:13px;
   padding:9px 4px;display:flex;flex-direction:column;align-items:center;gap:3px;
@@ -131,7 +172,7 @@ body::before{
 .keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:auto;padding-top:12px}
 .keypad button{
   background:var(--card);border:1px solid var(--line);border-radius:14px;
-  padding:15px 0;font-size:23px;font-weight:600;font-variant-numeric:tabular-nums
+  padding:11px 0;font-size:23px;font-weight:600;font-variant-numeric:tabular-nums
 }
 .keypad button:active{background:var(--line)}
 .keypad .k-alt{font-size:19px;color:var(--dim)}
@@ -143,13 +184,32 @@ body::before{
 /* Solid, not translucent — otherwise the blossom layer shows through it. */
 .save-btn:disabled{background:var(--card);color:var(--faint);box-shadow:inset 0 0 0 1px var(--line)}
 
-/* ---- cash ---- */
-.runway{
-  background:var(--card);border:1px solid var(--line);border-left:3px solid var(--accent2);
-  border-radius:12px;padding:12px 14px;margin:8px 0 14px;font-size:13px;line-height:1.5;color:var(--dim)
+/* ---- cash: your pocket ---- */
+.pocket{
+  background:var(--card);border:1px solid var(--line);border-radius:16px;
+  padding:16px 17px;margin:8px 0 9px
 }
-.runway b{color:var(--ink)}
-.runway.hide{display:none}
+.pocket.short{border-color:var(--warn)}
+.pocket.short .p-big,.pocket.short .p-mid{color:var(--warn)}
+.p-lbl{font-size:12px;color:var(--faint);font-weight:600}
+.p-big{font-size:38px;font-weight:700;letter-spacing:-.02em;margin:2px 0 4px;font-variant-numeric:tabular-nums}
+.p-mid{font-size:20px;font-weight:700;margin:2px 0 3px;font-variant-numeric:tabular-nums}
+.p-sub{font-size:12px;color:var(--faint)}
+.p-run{font-size:13px;color:var(--dim);line-height:1.5;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.p-run b{color:var(--ink)}
+.pocket-row{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.pocket.small{margin:0 0 9px;padding:12px 14px}
+.under-btn{text-align:center;font-size:12px;color:var(--faint);margin-top:7px}
+
+/* "I got cash" chooser */
+.choose{display:flex;flex-direction:column;gap:9px;padding-bottom:4px}
+.choose button{
+  display:flex;align-items:center;gap:13px;text-align:left;
+  background:var(--card);border:1px solid var(--line);border-radius:13px;padding:14px 15px
+}
+.choose button > span{font-size:24px}
+.choose b{display:block;font-size:15px;font-weight:650}
+.choose small{display:block;font-size:12px;color:var(--faint);margin-top:2px}
 
 .wcard{
   background:var(--card);border:1px solid var(--line);border-radius:14px;
@@ -201,8 +261,12 @@ body::before{
 .bar{margin-bottom:11px}
 .bar .bl{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px}
 .bar .bl b{font-variant-numeric:tabular-nums}
-.bar .bt{height:7px;background:var(--bg2);border-radius:4px;overflow:hidden}
+.bar .bt{position:relative;height:7px;background:var(--bg2);border-radius:4px;overflow:hidden}
 .bar .bf{height:100%;background:var(--accent);border-radius:4px}
+#view-spending .bar .bf{background:var(--accent2)}
+#view-spending .bar .bf.over{background:var(--accent)}
+/* where the daily budget sits on each day's bar */
+.bar .bmark{position:absolute;top:0;bottom:0;width:2px;margin-left:-1px;background:var(--ink);opacity:.55}
 .bar .sub{font-size:11px;color:var(--faint);margin-top:4px}
 
 /* ---- data ---- */
@@ -242,10 +306,10 @@ body::before{
   max-width:520px;margin:0 auto
 }
 .tabs button{
-  flex:1;padding:8px 0 9px;display:flex;flex-direction:column;align-items:center;gap:2px;
-  font-size:10.5px;font-weight:600;color:var(--faint)
+  flex:1;min-width:0;padding:8px 0 9px;display:flex;flex-direction:column;align-items:center;gap:2px;
+  font-size:10px;font-weight:600;color:var(--faint);white-space:nowrap
 }
-.tabs button span{font-size:19px;line-height:1}
+.tabs button span{font-size:18px;line-height:1}
 .tabs button.on{color:var(--accent-t)}
 
 /* ---- modal ---- */

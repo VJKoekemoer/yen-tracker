@@ -57,7 +57,7 @@ address bar, and works with the phone in flight mode.
 
 ### 4. Before you fly
 
-Open the app while you still have wifi and go to **Data → Rates & fees**:
+Open the app while you still have wifi and go to **Backup → Rates, fees and budget**:
 
 - Tap **Refresh rates from the internet** — this caches the exchange rates so they work
   offline for the whole trip
@@ -65,41 +65,75 @@ Open the app while you still have wifi and go to **Data → Rates & fees**:
   2.75% for FNB debit and credit and R85 for the ATM fee, based on your cash strategy
   note, but please confirm with FNB and Standard Bank. Every rand figure in the app
   depends on these being right.
-- When you're done testing, use **Clear all entries and start fresh**
+- Check the **daily budget** — it starts at R1,500
+- When you're done testing, use **Clear everything and start fresh**
 
 ---
 
 ## How to use it
 
-### Add tab — logging a spend
+Six tabs, each with one job:
+
+| Tab | What it's for |
+|---|---|
+| **Add** | Logging a spend |
+| **Cash** | The money in your pocket, and recording cash you've just got |
+| **Spending** | Where your money went, and how you're doing against the budget |
+| **Entries** | Every entry in its own currency and in rands, and what each card has taken off your account |
+| **Notes** | Anything the app doesn't cater for |
+| **Backup** | Backing up, exporting, and settings |
+
+### Add — logging a spend
 Tap the amount on the keypad, pick a category and which money it came out of, hit Save.
-Three taps for most things. The date and city fill themselves in from your itinerary,
-and you can override the city if you're out on a day trip.
+Three taps for most things. The city fills itself in from your itinerary, and you can
+change it if you're out on a day trip.
+
+The date follows today. Use the **‹ ›** arrows to step a day back or forward — handy for
+last night's dinner — or tap the date to jump to any day of the trip. It goes back to
+today on its own the next morning.
 
 Underneath the amount it shows you what that spend actually costs you in rands — using
-the real cost of the specific cash in your pocket, not a textbook exchange rate.
+the real cost of the specific cash in your pocket, not a textbook exchange rate. The
+strip at the top shows how that day is going against your daily budget; tap it to see
+the whole trip.
 
-### Cash tab — the money itself
-- **ATM withdrawal** — record what came out and, if you can check your banking app,
-  what the bank actually took off your account. An exact figure makes everything else
-  exact. If you leave it blank it estimates from your fee settings.
-- **Change USD → yen** — for the dollars you were given. It tells you what rate you
-  actually got versus the market rate, so you can tell whether a counter is ripping
-  you off before you change the rest.
-- **Add cash on hand** — record the gifted US dollars here when you set off. Mark them
-  as a gift and they cost you R0, which keeps them out of your "own pocket" total while
-  still counting as money spent.
+### Cash — the money in your pocket
+Your yen, big, with roughly how many days it will last at your pace. Singapore and US
+dollars appear underneath only while you're holding some.
 
-There's also a **cash runway**: once you've logged a few days it works out your daily
-yen burn and tells you roughly when you'll need another ATM.
+When you've got cash, tap **I got cash** and it asks how:
+- **From an ATM** — record what came out and, if you can check your banking app, what
+  the bank actually took off your account. An exact figure makes everything else exact.
+  If you leave it blank it estimates from your fee settings.
+- **At a money changer** — for the dollars you were given. It tells you what rate you
+  actually got versus the market rate, so you can tell whether a counter is ripping you
+  off before you change the rest.
+- **I brought it or was given it** — record the gifted US dollars here when you set off.
+  Mark them as a gift and they cost you R0, which keeps them out of your "own pocket"
+  total while still counting as money spent.
 
-### Stats tab
-Totals broken down by category, by day, by city, and by which card or cash it came from.
+### Spending — where it went
+The **budget card** at the top shows what you've spent so far against R1,500 a day, how
+far over or under you are, and what you can spend each day for the rest of the trip to
+finish on budget. It counts everything you spend, including what you pay for with the
+gifted dollars. Change the figure, or set it to 0 to hide it, under Backup → Rates, fees
+and budget.
 
-Two headline numbers:
+Below that, totals by category, by day (each day measured against the budget), by city,
+and by what you paid with. Two headline numbers:
 - **Spent so far** — the market value of everything you've bought
 - **Out of your pocket** — what it genuinely cost you, including ATM fees, card
   conversion margins, and excluding the gifted dollars
+
+At the bottom, what getting at your money has cost you in ATM fees and card margins.
+
+### Entries — everything you've logged
+Every entry, newest first, grouped by day. Each line shows the amount in the currency
+you paid in, with the rand figure underneath. Filter to just **Spends** or just
+**Money in**; tap ✕ to delete a mistake.
+
+At the top, **Off your accounts** shows what each card has taken off its account —
+taps plus cash drawn. That's the number to check against your banking app.
 
 ### Notes tab — the escape hatch
 For anything the app has no box for. A cost someone else covered that you'll settle up
@@ -114,7 +148,7 @@ It exists because you won't have a laptop with you. If the trip throws up someth
 app didn't anticipate, write it down here rather than trying to force it into a category
 that doesn't fit.
 
-### Data tab — backups
+### Backup — keeping a copy safe
 **This is the important one.** The app keeps everything on your phone. If the phone is
 lost or wiped, so is the data.
 
@@ -149,7 +183,7 @@ tap wherever they'll let you, and always, always choose to be charged in yen.
 
 ## Trying it out before the trip
 
-In the app: **Data → Rates & fees**, and scroll to the bottom.
+In the app: **Backup → Rates, fees and budget**, and scroll to the bottom.
 
 - **Load a sample trip to play with** — fills the app with five made-up days so you can
   see how it all behaves. Only works on an empty app, so it can't overwrite real entries.

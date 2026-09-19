@@ -10,7 +10,7 @@ const KEY = 'jpn2026';
 
 // Shown in Settings so you can tell at a glance whether an update has landed.
 // Keep in step with the CACHE version at the top of sw.js.
-const APP_VERSION = 'v5';
+const APP_VERSION = 'v6';
 
 /* ---------- reference data ---------- */
 
@@ -75,14 +75,17 @@ const DEFAULTS = {
     debitFxPct: 2.75,   // FNB debit currency conversion margin
     creditFxPct: 2.75,  // FNB credit card margin
     mymoFxPct: 5.0,     // Standard Bank MyMo — emergency only
-    giftedUsdFree: true // USD was a gift: counts as R0 out of pocket
+    giftedUsdFree: true, // USD was a gift: counts as R0 out of pocket
+    dailyBudget: 1500   // rands a day, measured against "spent" (market value); 0 hides it
   },
   lastBackup: null,
   ui: { wallet:'jpy', cat:'food', city:null }
 };
 
 let S = load();
-let draft = { amount:'', cat:S.ui.cat, wallet:S.ui.wallet, city:null, date:today() };
+// pinnedOn: the real calendar day on which you last moved the date by hand. Once
+// the calendar moves on, the app goes back to following today on its own.
+let draft = { amount:'', cat:S.ui.cat, wallet:S.ui.wallet, city:null, date:today(), pinnedOn:null };
 
 function load(){
   try {
@@ -105,13 +108,41 @@ const $ = s => document.querySelector(s);
 const el = (t,c,h) => { const n=document.createElement(t); if(c)n.className=c; if(h!==undefined)n.innerHTML=h; return n; };
 const esc = s => String(s??'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-function today(){
+function realToday(){
   const n = new Date();
-  const d = `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+  return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`;
+}
+function today(){
+  const d = realToday();
   // Before the trip starts, default to day 1 so pre-trip testing lands somewhere sensible
   if (d < TRIP_START) return TRIP_START;
   if (d > TRIP_END)   return TRIP_END;
   return d;
+}
+function addDays(d, n){
+  const x = new Date(d+'T00:00:00'); x.setDate(x.getDate()+n);
+  return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+}
+
+/* ---------- which day you're logging against ---------- */
+
+function setDate(d){
+  if (!d) return;
+  d = d < TRIP_START ? TRIP_START : d > TRIP_END ? TRIP_END : d;
+  draft.date = d;
+  draft.city = null;               // city follows the itinerary for the new day
+  draft.pinnedOn = realToday();
+  renderAll();
+}
+function shiftDay(n){ setDate(addDays(draft.date, n)); }
+
+// Called whenever the app comes back to the screen. Android often keeps the app
+// alive overnight, so without this it would still be showing yesterday.
+function followToday(){
+  if (draft.pinnedOn && draft.pinnedOn === realToday()) return;   // you chose a day today — leave it
+  const t = today();
+  draft.pinnedOn = null;
+  if (draft.date !== t){ draft.date = t; draft.city = null; renderAll(); }
 }
 function dayNo(d){
   const ms = new Date(d+'T00:00:00') - new Date(TRIP_START+'T00:00:00');
@@ -125,6 +156,8 @@ function money(v, cur){
   return c.sym + Number(v||0).toLocaleString('en-ZA',{minimumFractionDigits:c.dp,maximumFractionDigits:c.dp});
 }
 const R = v => money(v,'ZAR');
+// Whole rands, for budget figures where cents are just noise
+const R0 = v => 'R' + Math.round(Math.abs(v||0)).toLocaleString('en-ZA');
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 
 function rate(cur){ return S.settings.rates[cur] || 1; }        // foreign per ZAR
@@ -250,6 +283,34 @@ function daysLeft(){
   return Math.max(0, Math.round((new Date(TRIP_END) - new Date(d))/86400000));
 }
 
+/* ---------- daily budget ----------
+   Measured against "spent" — what things were worth at the market rate — so
+   paying with the gifted dollars still counts. Fees are reported separately.  */
+
+const TRIP_DAYS = dayNo(TRIP_END);
+
+function spentOn(date, L = ledger()){
+  return L.priced.filter(t => t.kind === 'spend' && t.date === date)
+                 .reduce((a,t) => a + t.zarValue, 0);
+}
+
+function budgetSummary(L = ledger()){
+  const daily = S.settings.dailyBudget || 0;
+  const spends = L.priced.filter(t => t.kind === 'spend');
+  // "So far" runs to today, or to your latest entry if that's later — so the
+  // sample trip and any pre-trip testing still add up sensibly.
+  const last = spends.reduce((m,t) => t.date > m ? t.date : m, today());
+  const through = last > TRIP_END ? TRIP_END : last;
+  const days = Math.max(1, dayNo(through));
+  const spent = spends.filter(t => t.date <= through).reduce((a,t) => a + t.zarValue, 0);
+  const allowed = daily * days;
+  const remainingDays = TRIP_DAYS - days;
+  const wholeTrip = daily * TRIP_DAYS;
+  const totalSpent = spends.reduce((a,t) => a + t.zarValue, 0);
+  return { daily, days, spent, allowed, diff: allowed - spent, remainingDays, wholeTrip,
+           perDayToFinish: remainingDays > 0 ? (wholeTrip - totalSpent) / remainingDays : null };
+}
+
 /* ============================================================
    VIEW: ADD SPEND
    ============================================================ */
@@ -263,9 +324,15 @@ function currentCur(){
 
 function renderAdd(){
   const d = draft.date;
-  $('#addDayLabel').textContent = ITIN[d] ? `Day ${dayNo(d)} · ${ITIN[d]}` : `Day ${dayNo(d)}`;
-  $('#addDateLabel').textContent = prettyDate(d);
+  $('#addDayLabel').textContent = `Day ${dayNo(d)}`;
+  $('#addDateLabel').textContent = prettyDate(d) + (d === today() && realToday() >= TRIP_START ? ' · today' : '');
   $('#addCityBtn').textContent = draft.city || ITIN[d] || 'Set city';
+  $('#dayPrev').disabled = d <= TRIP_START;
+  $('#dayNext').disabled = d >= TRIP_END;
+  const di = $('#dayInput');
+  di.min = TRIP_START; di.max = TRIP_END; di.value = d;
+
+  renderBudgetStrip();
 
   const cur = currentCur();
   $('#addCur').textContent = CUR[cur].sym;
@@ -363,6 +430,21 @@ function saveSpend(){
   toast(`${money(amt,cur)} logged`);
 }
 
+function renderBudgetStrip(){
+  const b = $('#budgetStrip');
+  const daily = S.settings.dailyBudget || 0;
+  b.hidden = daily <= 0;
+  if (daily <= 0) return;
+  const spent = spentOn(draft.date);
+  const left = daily - spent;
+  const pct = Math.min(100, spent / daily * 100);
+  b.classList.toggle('over', left < 0);
+  b.innerHTML =
+    `<div class="bs-row"><span>Day ${dayNo(draft.date)} budget</span>` +
+    `<span><b>${R0(spent)}</b> of ${R0(daily)} · ${left >= 0 ? `${R0(left)} left` : `<b class="over-t">${R0(left)} over</b>`}</span></div>` +
+    `<div class="bs-bar"><div class="bs-fill" style="width:${pct.toFixed(1)}%"></div></div>`;
+}
+
 /* ============================================================
    VIEW: CASH
    ============================================================ */
@@ -381,123 +463,74 @@ function renderCash(){
       `figures will correct themselves. Until then that cash is being valued at the market rate.`;
   }
 
-  // runway
-  const yen = L.cash.jpy.units;
-  const perDay = burn('jpy');
-  const rw = $('#runway');
-  if (perDay > 0 && yen > 0){
-    const d = yen / perDay;
-    const left = daysLeft();
-    rw.className = 'runway';
-    rw.innerHTML = `You're spending about <b>${money(perDay,'JPY')}</b> of yen cash a day. ` +
-      `<b>${money(yen,'JPY')}</b> in hand lasts roughly <b>${d.toFixed(1)} days</b>` +
-      (d < left ? ` — you'll want another withdrawal before the trip ends.` : ` — that should see you through.`);
-  } else if (yen > 0){
-    rw.className = 'runway';
-    rw.innerHTML = `<b>${money(yen,'JPY')}</b> in hand. Log a few spends and this will start predicting when you next need an ATM.`;
-  } else {
-    rw.className = 'runway hide';
-  }
+  // Yen is the main event, so it gets the big card. Yen are worth fractions of
+  // a rand, so its cost is quoted per ¥100 — per ¥1 rounds to a meaningless R0,07.
+  const costLine = (c, cur) => {
+    const basis = c.units > 0 ? c.cost / c.units : 0;
+    if (c.units <= 0)  return '';
+    if (basis <= 0)    return 'A gift — cost you nothing';
+    if (basis < 0.5)   return `Cost you ${R(basis*100)} per ${CUR[cur].sym}100`;
+    return `Cost you ${R(basis)} per ${CUR[cur].sym}1`;
+  };
 
-  // wallet cards
-  const wc = $('#walletCards'); wc.innerHTML = '';
-  WALLETS.forEach(w => {
-    const card = el('div','wcard' + (w.danger?' danger':''));
-    if (w.type === 'cash'){
-      const c = L.cash[w.id];
-      const basis = c.units > 0 ? c.cost/c.units : 0;
-      if (c.units < 0) card.classList.add('short');
-      else if (c.units === 0) card.classList.add('empty');
-      // Yen are worth fractions of a rand, so quote the cost per 100 rather than
-      // per 1, otherwise it rounds to a meaningless "R0,07".
-      let costLine;
-      if (c.units < 0)       costLine = `Spent ${money(-c.units, w.cur)} more than you've recorded getting`;
-      else if (c.units === 0) costLine = 'Nothing in hand';
-      else if (basis <= 0)   costLine = 'A gift — cost you nothing';
-      else if (basis < 0.5)  costLine = `Cost you ${R(basis*100)} per ${CUR[w.cur].sym}100`;
-      else                   costLine = `Cost you ${R(basis)} per ${CUR[w.cur].sym}1`;
-      card.innerHTML =
-        `<div class="top"><span class="nm">${esc(w.label)}</span>` +
-        `<span class="bal">${money(c.units, w.cur)}</span></div>` +
-        `<div class="sub"><span>${costLine}</span>` +
-        `<span>${c.cost>0 ? `${R(c.cost)} tied up` : ''}</span></div>`;
+  const yen = L.cash.jpy;
+  let runway = '';
+  if (yen.units < 0){
+    runway = `You've spent more yen than you've recorded getting — see the note above.`;
+  } else if (yen.units > 0){
+    const perDay = burn('jpy');
+    if (perDay > 0){
+      const d = yen.units / perDay, left = daysLeft();
+      runway = `At your pace (about ${money(perDay,'JPY')} a day) this lasts roughly <b>${d.toFixed(0)} days</b>` +
+        (d < left ? ` — you'll want another ATM before the trip ends.` : ` — enough for the rest of the trip.`);
     } else {
-      const k = L.card[w.id] || { tap:0, atm:0, fee:0 };
-      const total = k.tap + k.atm;
-      const pct = S.settings[w.fx] || 0;
-      if (total <= 0) card.classList.add('empty');
-      // Tapped + cash drawn = what this account has actually paid out. Only the
-      // tapped half is spending; the cash half shows up as spending as you use it.
-      const parts = [];
-      if (k.tap > 0) parts.push(`Tapped ${R(k.tap)}`);
-      if (k.atm > 0) parts.push(`Cash drawn ${R(k.atm)}`);
-      card.innerHTML =
-        `<div class="top"><span class="nm">${esc(w.acct || w.label)}</span>` +
-        `<span class="bal">${R(total)}</span></div>` +
-        `<div class="sub"><span>${parts.length ? parts.join(' · ') : `${pct}% conversion fee`}` +
-        `${w.danger && total<=0 ? ' · emergency only' : ''}</span>` +
-        `<span>${total>0 ? 'off this account' : ''}</span></div>`;
+      runway = `Log a few cash spends and this will estimate when you next need an ATM.`;
     }
-    wc.appendChild(card);
-  });
+  } else {
+    runway = `Nothing recorded yet. After your first ATM, tap <b>I got cash</b>.`;
+  }
+  const py = $('#pocketYen');
+  py.className = 'pocket' + (yen.units < 0 ? ' short' : '');
+  py.innerHTML =
+    `<div class="p-lbl">Yen</div>` +
+    `<div class="p-big">${money(yen.units,'JPY')}</div>` +
+    (costLine(yen,'JPY') ? `<div class="p-sub">${costLine(yen,'JPY')}</div>` : '') +
+    `<div class="p-run">${runway}</div>`;
 
-  renderMoneyIn(L);
-
-  // fee report
-  const spendCost = L.priced.filter(t=>t.kind==='spend').reduce((a,t)=>a+t.zarCost,0);
-  const spendVal  = L.priced.filter(t=>t.kind==='spend').reduce((a,t)=>a+t.zarValue,0);
-  const atm = L.priced.filter(t=>t.kind==='fund').reduce((a,t)=>a+(t.fee||0),0);
-  const cardFee = L.priced.filter(t=>t.kind==='spend' && W[t.wallet]?.type==='card')
-                          .reduce((a,t)=>a+(t.zarCost-t.zarValue),0);
-  $('#feeBox').innerHTML =
-    `<div class="fr"><span>Spent, at market rate</span><b>${R(spendVal)}</b></div>` +
-    `<div class="fr"><span>ATM fees &amp; cash FX margin</span><b>${R(atm)}</b></div>` +
-    `<div class="fr"><span>Card conversion fees</span><b>${R(cardFee)}</b></div>` +
-    `<div class="fr big"><span>Cost of getting at your money</span><b>${R(atm+cardFee)}</b></div>`;
+  // Singapore and US dollars only appear while you're actually holding some,
+  // so after the layover the S$ card quietly disappears instead of showing zero.
+  const others = [['sgd','Singapore dollars'], ['usd','US dollars']]
+    .filter(([id]) => L.cash[id].units !== 0);
+  $('#pocketOther').innerHTML = others.map(([id, name]) => {
+    const c = L.cash[id], w = W[id];
+    return `<div class="pocket small${c.units < 0 ? ' short' : ''}">
+      <div class="p-lbl">${name}</div>
+      <div class="p-mid">${money(c.units, w.cur)}</div>
+      ${costLine(c, w.cur) ? `<div class="p-sub">${costLine(c, w.cur)}</div>` : ''}</div>`;
+  }).join('');
+  $('#pocketOther').hidden = others.length === 0;
 }
 
-/* ---------- money-in history ----------
-   Every event that put cash in your hand, dated, so it can be laid alongside
-   a bank statement months later. Spending lives on the Data tab; this is only
-   the money coming in.                                                        */
+/* ---------- "I got cash" ----------
+   One door in, asking the question in your words rather than the app's. */
 
-function renderMoneyIn(L){
-  const rows = L.priced
-    .filter(t => t.kind === 'fund' || t.kind === 'fx')
-    .sort((a,b) => b.date.localeCompare(a.date) || (b.at||0) - (a.at||0));
-
-  $('#moneyInHd').hidden = rows.length === 0;
-  $('#moneyInList').innerHTML = rows.map(t => {
-    const when = `${prettyDate(t.date)} · Day ${dayNo(t.date)}`;
-
-    if (t.kind === 'fx'){
-      return `<div class="tx"><div class="ic">🔁</div>
-        <div class="mid">
-          <div class="t1">Changed ${money(t.fromAmount, W[t.from]?.cur)} into ${money(t.toAmount, W[t.to]?.cur)}</div>
-          <div class="t2">${when} · rate ${(t.toAmount/t.fromAmount).toFixed(2)}</div>
-        </div>
-        <div class="rt"><div class="a1">${money(t.toAmount, W[t.to]?.cur)}</div>
-        <div class="a2">−${money(t.fromAmount, W[t.from]?.cur)}</div></div></div>`;
-    }
-
-    const label = t.source === 'atm'  ? `ATM withdrawal · ${W[t.card||'fnbd']?.acct || 'card'}`
-                : t.source === 'gift' ? 'Gifted cash'
-                : 'Cash bought before leaving';
-    return `<div class="tx in"><div class="ic">${t.source==='atm'?'🏧':'💵'}</div>
-      <div class="mid">
-        <div class="t1">${esc(label)}</div>
-        <div class="t2">${when}${t.fee > 0 ? ` · ${R(t.fee)} in fees` : ''}</div>
-      </div>
-      <div class="rt"><div class="a1">+${money(t.amount, t.cur)}</div>
-      <div class="a2">${t.zarCost > 0 ? R(t.zarCost) : 'free'}</div></div></div>`;
-  }).join('');
+function dlgGotCash(){
+  modal('How did you get it?', `
+    <div class="choose">
+      <button type="button" id="gAtm"><span>🏧</span><div><b>From an ATM</b><small>With your FNB or MyMo card</small></div></button>
+      <button type="button" id="gFx"><span>🔁</span><div><b>At a money changer</b><small>Swapped one currency for another</small></div></button>
+      <button type="button" id="gIn"><span>🎁</span><div><b>I brought it or was given it</b><small>Like the gifted US dollars</small></div></button>
+    </div>`);
+  $('#gAtm').onclick = dlgAtm;
+  $('#gFx').onclick  = dlgFx;
+  $('#gIn').onclick  = dlgCashIn;
 }
 
 /* ---------- ATM / exchange / cash-in dialogs ---------- */
 
 function dlgAtm(){
   const s = S.settings;
-  modal('ATM withdrawal', `
+  modal('Cash from an ATM', `
     <div class="f">
       <label>Which card?</label>
       <select id="aCard">
@@ -551,14 +584,14 @@ function dlgAtm(){
     S.tx.push({ id:uid(), kind:'fund', date:$('#aDate').value, at:Date.now(),
                 wallet: cur==='JPY'?'jpy':'sgd', cur, amount:amt,
                 zarCost: zar, spot: rate(cur), source:'atm', card });
-    save(); closeModal(); renderCash(); buildAddChrome();
+    save(); closeModal(); renderAll();
     toast(`${money(amt,cur)} added`);
   };
 }
 
 function dlgFx(){
   const L = ledger();
-  modal('Change cash', `
+  modal('At a money changer', `
     <p class="hint" style="margin:0 0 14px">Only if you actually hand cash over a counter. Dollars you spend
       as dollars don't belong here — log those on the Add screen against <b>$ cash</b>.</p>
     <div class="f2">
@@ -620,13 +653,13 @@ function dlgFx(){
     if (!(f>0 && t>0)) return toast('Both amounts, please');
     S.tx.push({ id:uid(), kind:'fx', date:$('#xDate').value, at:Date.now(),
                 from:fromId, fromAmount:f, to:toId, toAmount:t });
-    save(); closeModal(); renderCash(); buildAddChrome();
+    save(); closeModal(); renderAll();
     toast('Exchange recorded');
   };
 }
 
 function dlgCashIn(){
-  modal('Cash on hand', `
+  modal('Cash you brought or were given', `
     <div class="f2">
       <div class="f"><label>Currency</label>
         <select id="cCur"><option value="USD">US dollars</option><option value="JPY">Japanese yen</option><option value="SGD">Singapore dollars</option></select>
@@ -659,30 +692,34 @@ function dlgCashIn(){
     S.tx.push({ id:uid(), kind:'fund', date:$('#cDate').value, at:Date.now(),
                 wallet: cur==='JPY'?'jpy':cur==='SGD'?'sgd':'usd', cur, amount:amt,
                 zarCost: zar, spot: rate(cur), source: gift?'gift':'bought' });
-    save(); closeModal(); renderCash(); buildAddChrome();
+    save(); closeModal(); renderAll();
     toast(`${money(amt,cur)} added`);
   };
 }
 
 /* ============================================================
-   VIEW: STATS
+   VIEW: SPENDING
    ============================================================ */
 
 let seg = 'cat';
 
-function renderStats(){
+function renderSpending(){
   const L = ledger();
   const spends = L.priced.filter(t => t.kind === 'spend');
   const cost = spends.reduce((a,t)=>a+t.zarCost,0);
   const val  = spends.reduce((a,t)=>a+t.zarValue,0);
   const ownPocket = cost;  // cost basis already excludes gifted cash
-  const days = new Set(spends.map(t=>t.date)).size || 1;
+  const B = budgetSummary(L);
+
+  renderBudgetCard(B);
 
   $('#statTotals').innerHTML =
     `<div><div class="lbl">Spent so far</div><div class="val">${R(val)}</div></div>` +
     `<div><div class="lbl">Out of your pocket</div><div class="val">${R(ownPocket)}</div></div>` +
-    `<div><div class="lbl">Per day</div><div class="val">${R(val/days)}</div></div>` +
+    `<div><div class="lbl">Average a day</div><div class="val">${R(B.spent / B.days)}</div></div>` +
     `<div><div class="lbl">Entries</div><div class="val">${spends.length}</div></div>`;
+
+  renderFees(L);
 
   const body = $('#statBody');
   if (!spends.length){
@@ -690,11 +727,12 @@ function renderStats(){
     return;
   }
 
+  if (seg === 'day'){ renderDayBars(spends, B.daily); return; }
+
   const groups = {};
   for (const t of spends){
     let k, sub;
     if (seg==='cat')       { k = CAT[t.cat]?.label || t.cat; sub = CAT[t.cat]?.ic || ''; }
-    else if (seg==='day')  { k = t.date; }
     else if (seg==='city') { k = t.city || 'Unrecorded'; }
     else                   { k = W[t.wallet]?.label || t.wallet; }
     groups[k] = groups[k] || { val:0, n:0, sub };
@@ -702,20 +740,78 @@ function renderStats(){
     groups[k].n++;
   }
 
-  let entries = Object.entries(groups);
-  if (seg === 'day') entries.sort((a,b)=>a[0].localeCompare(b[0]));
-  else entries.sort((a,b)=>b[1].val - a[1].val);
-
+  const entries = Object.entries(groups).sort((a,b)=>b[1].val - a[1].val);
   const max = Math.max(...entries.map(e=>e[1].val));
   body.innerHTML = entries.map(([k,g]) => {
-    const label = seg==='day' ? `Day ${dayNo(k)} · ${prettyDate(k)}` : `${g.sub?g.sub+' ':''}${esc(k)}`;
     const pct = (g.val/val*100);
     return `<div class="bar">
-      <div class="bl"><span>${label}</span><b>${R(g.val)}</b></div>
+      <div class="bl"><span>${g.sub?g.sub+' ':''}${esc(k)}</span><b>${R(g.val)}</b></div>
       <div class="bt"><div class="bf" style="width:${(g.val/max*100).toFixed(1)}%"></div></div>
       <div class="sub">${g.n} ${g.n===1?'entry':'entries'} · ${pct.toFixed(0)}% of spend</div>
     </div>`;
   }).join('');
+}
+
+function renderBudgetCard(B){
+  const c = $('#budgetCard');
+  c.hidden = B.daily <= 0;
+  if (B.daily <= 0) return;
+  const under = B.diff >= 0;
+  const pct = B.allowed > 0 ? Math.min(100, B.spent / B.allowed * 100) : 0;
+  let ahead = '';
+  if (B.perDayToFinish != null){
+    ahead = B.perDayToFinish > 0
+      ? `To finish on budget you can spend about <b>${R0(B.perDayToFinish)} a day</b> for the remaining ${B.remainingDays} ${B.remainingDays===1?'day':'days'}.`
+      : `You're already past the whole-trip budget of ${R0(B.wholeTrip)}.`;
+  }
+  c.className = 'budget-card' + (under ? '' : ' over');
+  c.innerHTML =
+    `<div class="bc-top"><span>Budget · ${R0(B.daily)} a day</span><span>Whole trip ${R0(B.wholeTrip)}</span></div>` +
+    `<div class="bc-main"><b>${R0(B.spent)}</b> of ${R0(B.allowed)} so far <span>(${B.days} ${B.days===1?'day':'days'})</span></div>` +
+    `<div class="bs-bar"><div class="bs-fill" style="width:${pct.toFixed(1)}%"></div></div>` +
+    `<div class="bc-verdict">${under ? `${R0(B.diff)} under budget` : `${R0(B.diff)} over budget`}</div>` +
+    (ahead ? `<div class="bc-ahead">${ahead}</div>` : '');
+}
+
+// Day view: every trip day so far against the daily budget, with a marker
+// where the budget sits, so a quiet day and a splurge day read at a glance.
+function renderDayBars(spends, daily){
+  const byDay = {};
+  spends.forEach(t => byDay[t.date] = (byDay[t.date]||0) + t.zarValue);
+  const last = Object.keys(byDay).sort().pop();
+  const days = [];
+  for (let d = TRIP_START; d <= last; d = addDays(d,1)) days.push(d);
+  const scale = Math.max(daily, ...Object.values(byDay));
+  $('#statBody').innerHTML = days.slice().reverse().map(d => {
+    const v = byDay[d] || 0;
+    const diff = daily - v;
+    const verdict = daily > 0
+      ? (diff >= 0 ? `<span class="good-t">${R0(diff)} under</span>` : `<span class="over-t">${R0(diff)} over</span>`)
+      : '';
+    return `<div class="bar">
+      <div class="bl"><span>Day ${dayNo(d)} · ${prettyDate(d)}${ITIN[d] ? ' · '+esc(ITIN[d]) : ''}</span><b>${R0(v)}</b></div>
+      <div class="bt">
+        <div class="bf${daily > 0 && v > daily ? ' over' : ''}" style="width:${(v/scale*100).toFixed(1)}%"></div>
+        ${daily > 0 ? `<div class="bmark" style="left:${(daily/scale*100).toFixed(1)}%"></div>` : ''}
+      </div>
+      <div class="sub">${verdict}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderFees(L){
+  const any = L.priced.length > 0;
+  $('#feeWrap').hidden = !any;
+  if (!any) return;
+  const spendVal = L.priced.filter(t=>t.kind==='spend').reduce((a,t)=>a+t.zarValue,0);
+  const atm = L.priced.filter(t=>t.kind==='fund').reduce((a,t)=>a+(t.fee||0),0);
+  const cardFee = L.priced.filter(t=>t.kind==='spend' && W[t.wallet]?.type==='card')
+                          .reduce((a,t)=>a+(t.zarCost-t.zarValue),0);
+  $('#feeBox').innerHTML =
+    `<div class="fr"><span>Spent, at market rate</span><b>${R(spendVal)}</b></div>` +
+    `<div class="fr"><span>ATM fees and cash exchange margin</span><b>${R(atm)}</b></div>` +
+    `<div class="fr"><span>Card conversion fees</span><b>${R(cardFee)}</b></div>` +
+    `<div class="fr big"><span>Cost of getting at your money</span><b>${R(atm+cardFee)}</b></div>`;
 }
 
 /* ============================================================
@@ -783,59 +879,77 @@ function addNote(){
 }
 
 /* ============================================================
-   VIEW: DATA
+   VIEW: ENTRIES
+   Everything logged, each line in its own currency with the rand
+   figure underneath, plus what each card has taken off its account —
+   the numbers to hold up against the banking app.
    ============================================================ */
 
-function renderData(){
-  // backup status
-  const bb = $('#backupBox');
-  const last = S.lastBackup ? new Date(S.lastBackup) : null;
-  const ageDays = last ? (Date.now()-last)/86400000 : 999;
-  bb.className = 'backup-box' + (ageDays > 2 ? ' stale' : '');
-  bb.innerHTML = last
-    ? `Last backed up <b>${last.toLocaleString('en-ZA',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</b>` +
-      (ageDays > 2 ? ` — that's ${Math.floor(ageDays)} days ago. Worth doing again next time you have signal.`
-                   : ` · ${S.tx.length} entries safe.`)
-    : `<b>Not backed up yet.</b> Everything lives on this phone only. Tap "Back up to Drive" whenever you have a connection — it takes two seconds.`;
+let entryFilter = 'all';
 
-  // transaction list, newest first
+function renderEntries(){
   const L = ledger();
+
+  // What's left each account: taps plus cash drawn. Only accounts you've used.
+  const used = WALLETS.filter(w => w.type === 'card')
+    .map(w => ({ w, k: L.card[w.id] || { tap:0, atm:0 } }))
+    .filter(({k}) => k.tap + k.atm > 0);
+  $('#acctBox').innerHTML = !used.length ? '' :
+    `<h2 class="sec" style="margin-top:6px">Off your accounts</h2>` +
+    used.map(({w,k}) => {
+      const parts = [];
+      if (k.tap > 0) parts.push(`Tapped ${R(k.tap)}`);
+      if (k.atm > 0) parts.push(`Cash drawn ${R(k.atm)}`);
+      return `<div class="wcard${w.danger?' danger':''}"><div class="top"><span class="nm">${esc(w.acct)}</span>` +
+        `<span class="bal">${R(k.tap + k.atm)}</span></div><div class="sub"><span>${parts.join(' · ')}</span></div></div>`;
+    }).join('') +
+    `<p class="tip" style="margin-top:4px">These should match your banking app. They're higher than your spending
+      because cash you've drawn but not yet spent is still in your pocket — it only counts as spent when you hand it over.</p>`;
+
   const list = $('#txList');
-  if (!S.tx.length){
-    list.innerHTML = `<div class="empty-msg">No entries yet.</div>`;
+  const keep = t => entryFilter === 'all' ? true
+                  : entryFilter === 'spend' ? t.kind === 'spend'
+                  : t.kind !== 'spend';
+  const rows = L.priced.filter(keep).sort((a,b) =>
+    b.date.localeCompare(a.date) || (b.at||0) - (a.at||0));
+
+  if (!rows.length){
+    list.innerHTML = `<div class="empty-msg">${
+      !S.tx.length ? 'No entries yet.'
+      : entryFilter === 'spend' ? 'No spends logged yet.' : 'No cash recorded yet.<br>Use “I got cash” on the Cash tab.'}</div>`;
     return;
   }
-  const rows = [...L.priced].sort((a,b) =>
-    b.date.localeCompare(a.date) || (b.at||0) - (a.at||0));
+
   const byDay = {};
   rows.forEach(t => (byDay[t.date] = byDay[t.date] || []).push(t));
 
   list.innerHTML = Object.entries(byDay).sort((a,b)=>b[0].localeCompare(a[0])).map(([d,ts]) => {
-    const dayTotal = ts.filter(t=>t.kind==='spend').reduce((a,t)=>a+t.zarValue,0);
-    return `<div class="txday"><span>Day ${dayNo(d)} · ${prettyDate(d)}</span><span>${dayTotal?R(dayTotal):''}</span></div>` +
+    const dayTotal = spentOn(d, L);
+    return `<div class="txday"><span>Day ${dayNo(d)} · ${prettyDate(d)}</span><span>${dayTotal?`${R(dayTotal)} spent`:''}</span></div>` +
       ts.map(t => {
         if (t.kind === 'fund'){
-          const w = W[t.wallet];
+          const label = t.source === 'atm'  ? `ATM · ${W[t.card||'fnbd']?.acct || 'card'}`
+                      : t.source === 'gift' ? 'Gifted cash' : 'Cash brought along';
           return `<div class="tx in"><div class="ic">${t.source==='atm'?'🏧':'💵'}</div>
-            <div class="mid"><div class="t1">${t.source==='atm'?'ATM withdrawal':t.source==='gift'?'Gifted cash':'Cash brought along'}</div>
-            <div class="t2">into ${esc(w?.label||'')}${t.zarCost?` · cost ${R(t.zarCost)}`:' · free'}</div></div>
-            <div class="rt"><div class="a1">+${money(t.amount,t.cur)}</div><div class="a2">${t.fee>0?`${R(t.fee)} fee`:''}</div></div>
-            <button class="del" data-del="${t.id}" type="button">✕</button></div>`;
+            <div class="mid"><div class="t1">${esc(label)}</div>
+            <div class="t2">into ${esc(W[t.wallet]?.label||'')}${t.fee>0?` · ${R(t.fee)} in fees`:''}</div></div>
+            <div class="rt"><div class="a1">+${money(t.amount,t.cur)}</div><div class="a2">${t.zarCost>0?R(t.zarCost):'free'}</div></div>
+            <button class="del" data-del="${t.id}" type="button" aria-label="Delete">✕</button></div>`;
         }
         if (t.kind === 'fx'){
           return `<div class="tx"><div class="ic">🔁</div>
-            <div class="mid"><div class="t1">Changed cash</div>
-            <div class="t2">${esc(W[t.from]?.label)} → ${esc(W[t.to]?.label)}</div></div>
+            <div class="mid"><div class="t1">Changed ${money(t.fromAmount,W[t.from]?.cur)} into ${money(t.toAmount,W[t.to]?.cur)}</div>
+            <div class="t2">Rate ${(t.toAmount/t.fromAmount).toFixed(2)}</div></div>
             <div class="rt"><div class="a1">${money(t.toAmount,W[t.to]?.cur)}</div>
             <div class="a2">−${money(t.fromAmount,W[t.from]?.cur)}</div></div>
-            <button class="del" data-del="${t.id}" type="button">✕</button></div>`;
+            <button class="del" data-del="${t.id}" type="button" aria-label="Delete">✕</button></div>`;
         }
         const c = CAT[t.cat];
         return `<div class="tx"><div class="ic">${c?.ic||'✨'}</div>
           <div class="mid"><div class="t1">${esc(t.note || c?.label || 'Spend')}</div>
           <div class="t2">${esc(t.city||'')}${t.city?' · ':''}${esc(W[t.wallet]?.short||'')}</div></div>
           <div class="rt"><div class="a1">${money(t.amount,t.cur)}</div><div class="a2">${R(t.zarValue)}</div></div>
-          <button class="del" data-del="${t.id}" type="button">✕</button></div>`;
+          <button class="del" data-del="${t.id}" type="button" aria-label="Delete">✕</button></div>`;
       }).join('');
   }).join('');
 
@@ -843,25 +957,45 @@ function renderData(){
     b.onclick = () => {
       if (!confirm('Delete this entry?')) return;
       S.tx = S.tx.filter(t => t.id !== b.dataset.del);
-      save(); renderData(); toast('Deleted');
+      save(); renderAll(); toast('Deleted');
     };
   });
+}
+
+/* ============================================================
+   VIEW: BACKUP & SETTINGS
+   ============================================================ */
+
+function renderBackup(){
+  const bb = $('#backupBox');
+  const last = S.lastBackup ? new Date(S.lastBackup) : null;
+  const ageDays = last ? (Date.now()-last)/86400000 : 999;
+  bb.className = 'backup-box' + (ageDays > 2 ? ' stale' : '');
+  bb.innerHTML = last
+    ? `Last backed up <b>${last.toLocaleString('en-ZA',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</b>` +
+      (ageDays > 2 ? ` — that's ${Math.floor(ageDays)} days ago. Worth doing again next time you have signal.`
+                   : ` · ${S.tx.length} entries and ${S.notes.length} notes safe.`)
+    : `<b>Not backed up yet.</b> Everything lives on this phone only. Tap "Back up to Drive" whenever you have a connection — it takes two seconds.`;
 }
 
 /* ---------- settings ---------- */
 
 function dlgSettings(){
   const s = S.settings;
-  modal('Rates &amp; fees', `
+  modal('Rates, fees and budget', `
+    <h2 class="sec" style="margin-top:0">Daily budget</h2>
+    <div class="f"><label>Rands a day</label><input type="number" id="sBudget" inputmode="numeric" value="${s.dailyBudget}">
+      <div class="hint">Counts everything you spend, including what you pay for with the gifted dollars. Set it to 0 to hide the budget.</div></div>
+
+    <h2 class="sec">Exchange rates</h2>
     <div class="calc" id="rateStatus"></div>
     <button class="mbtn ghost" id="sFetch" type="button" style="margin-bottom:16px">Refresh rates from the internet</button>
 
-    <h2 class="sec" style="margin-top:0">Exchange rates — per R1</h2>
     <div class="f2">
-      <div class="f"><label>Japanese yen</label><input type="number" step="0.01" id="sJPY" value="${s.rates.JPY}"></div>
-      <div class="f"><label>Singapore $</label><input type="number" step="0.0001" id="sSGD" value="${s.rates.SGD}"></div>
+      <div class="f"><label>Yen per R1</label><input type="number" step="0.01" id="sJPY" value="${s.rates.JPY}"></div>
+      <div class="f"><label>Singapore $ per R1</label><input type="number" step="0.0001" id="sSGD" value="${s.rates.SGD}"></div>
     </div>
-    <div class="f"><label>US dollars</label><input type="number" step="0.0001" id="sUSD" value="${s.rates.USD}"></div>
+    <div class="f"><label>US $ per R1</label><input type="number" step="0.0001" id="sUSD" value="${s.rates.USD}"></div>
 
     <h2 class="sec">Your bank's fees</h2>
     <div class="f"><label>Flat ATM fee per withdrawal (rands)</label><input type="number" id="sAtm" value="${s.atmFeeZar}">
@@ -922,7 +1056,7 @@ function dlgSettings(){
 
   $('#sDemo').onclick = () => {
     if (seedDemo()){
-      closeModal(); renderAll(); show('stats');
+      closeModal(); renderAll(); show('spending');
       toast('Sample trip loaded — have a play');
     } else {
       toast(`Clear your ${S.tx.length} entries first`);
@@ -944,6 +1078,7 @@ function dlgSettings(){
     s.debitFxPct = parseFloat($('#sD').value)||0;
     s.creditFxPct = parseFloat($('#sC').value)||0;
     s.mymoFxPct = parseFloat($('#sM').value)||0;
+    s.dailyBudget = Math.max(0, parseFloat($('#sBudget').value)||0);
     save(); closeModal(); renderAll(); toast('Saved');
   };
 }
@@ -1022,7 +1157,7 @@ async function doBackup(){
   const stamp = new Date().toISOString().slice(0,10);
   const ok = await shareFile(`japan-expenses-${stamp}.json`, backupJson(), 'application/json');
   if (ok){
-    S.lastBackup = Date.now(); save(); renderData();
+    S.lastBackup = Date.now(); save(); renderBackup();
     toast('Backed up — pick Drive from the share sheet');
   }
 }
@@ -1073,8 +1208,7 @@ function dlgCity(){
   `);
   // renderAll, not renderAdd — this dialog is reachable from Notes too.
   $('#pDate').onchange = e => {
-    draft.date = e.target.value; draft.city = null;
-    closeModal(); renderAll(); toast(`Switched to ${prettyDate(draft.date)}`);
+    closeModal(); setDate(e.target.value); toast(`Switched to ${prettyDate(draft.date)}`);
   };
   $('#modalBody').querySelectorAll('[data-city]').forEach(b => {
     b.onclick = () => { draft.city = b.dataset.city; closeModal(); renderAll(); };
@@ -1119,7 +1253,7 @@ function seedDemo(){
   sp('2026-10-09','jpy','JPY',2200,'food','Matsuyama','Dinner');
   sp('2026-10-09','jpy','JPY',680,'toiletries','Matsuyama','Plasters, tissues');
 
-  draft.date = '2026-10-09'; draft.city = null;
+  draft.date = '2026-10-09'; draft.city = null; draft.pinnedOn = realToday();
   save();
   return true;
 }
@@ -1128,24 +1262,25 @@ function seedDemo(){
    NAV + BOOT
    ============================================================ */
 
-const VIEWS = ['add','cash','stats','notes','data'];
+const VIEWS = ['add','cash','spending','entries','notes','backup'];
+const RENDER = {
+  cash: renderCash, spending: renderSpending, entries: renderEntries,
+  notes: renderNotes, backup: renderBackup
+};
 
 function show(v){
   VIEWS.forEach(n => { $('#view-'+n).hidden = (n !== v); });
   $('#tabs').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  if (v==='cash') renderCash();
-  if (v==='stats') renderStats();
-  if (v==='notes'){ editingNote = null; renderNotes(); }
-  if (v==='data') renderData();
-  if (v==='add'){ buildAddChrome(); renderAdd(); }
+  if (v === 'notes') editingNote = null;
+  if (v === 'add'){ buildAddChrome(); renderAdd(); }
+  else RENDER[v]();
+  // The page itself scrolls, not the view — start every tab at its top
+  window.scrollTo(0, 0);
 }
 
 function renderAll(){
   buildAddChrome(); renderAdd();
-  if (!$('#view-cash').hidden) renderCash();
-  if (!$('#view-stats').hidden) renderStats();
-  if (!$('#view-notes').hidden) renderNotes();
-  if (!$('#view-data').hidden) renderData();
+  for (const [v, fn] of Object.entries(RENDER)) if (!$('#view-'+v).hidden) fn();
 }
 
 function init(){
@@ -1155,13 +1290,24 @@ function init(){
   $('#saveSpend').onclick = saveSpend;
   $('#addCityBtn').onclick = dlgCity;
 
+  $('#dayPrev').onclick = () => shiftDay(-1);
+  $('#dayNext').onclick = () => shiftDay(1);
+  $('#dayInput').onchange = e => setDate(e.target.value);
+  // Desktop Chrome only opens the calendar from its icon; ask for it outright.
+  $('#dayInput').onclick = e => { try { e.target.showPicker(); } catch(_){} };
+  $('#budgetStrip').onclick = () => show('spending');
+
   $('#noteText').oninput = () => { $('#addNoteBtn').disabled = !$('#noteText').value.trim(); };
   $('#addNoteBtn').onclick = addNote;
   $('#noteCityBtn').onclick = dlgCity;
 
-  $('#btnAtm').onclick = dlgAtm;
-  $('#btnFx').onclick = dlgFx;
-  $('#btnCashIn').onclick = dlgCashIn;
+  $('#btnGotCash').onclick = dlgGotCash;
+
+  $('#entrySeg').querySelectorAll('button').forEach(b => b.onclick = () => {
+    entryFilter = b.dataset.f;
+    $('#entrySeg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    renderEntries();
+  });
 
   $('#btnBackup').onclick = doBackup;
   $('#btnCsv').onclick = doCsv;
@@ -1175,7 +1321,12 @@ function init(){
   $('#statSeg').querySelectorAll('button').forEach(b => b.onclick = () => {
     seg = b.dataset.seg;
     $('#statSeg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
-    renderStats();
+    renderSpending();
+  });
+
+  // Back on screen after a while away: move to today if the calendar has turned over.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') followToday();
   });
 
   // ?reset wipes entries (handy while testing); ?demo fills an empty app with a sample trip
@@ -1185,7 +1336,7 @@ function init(){
   }
 
   if (location.search.includes('demo') && seedDemo()){
-    show('stats');
+    show('spending');
     setTimeout(() => toast('Sample trip loaded — have a play'), 400);
   } else {
     show('add');

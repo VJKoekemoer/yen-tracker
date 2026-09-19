@@ -1,5 +1,5 @@
 // Bump this string whenever the app changes, and keep APP_VERSION in app.js in step.
-const CACHE = 'yen-tracker-v5';
+const CACHE = 'yen-tracker-v6';
 
 const SHELL = [
   './',

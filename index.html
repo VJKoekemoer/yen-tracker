@@ -21,12 +21,20 @@
   <!-- ============ ADD SPEND ============ -->
   <section class="view" id="view-add">
     <header class="hdr">
-      <div>
-        <div class="hdr-day" id="addDayLabel">—</div>
-        <div class="hdr-sub" id="addDateLabel">—</div>
+      <div class="daynav">
+        <button class="dnav" id="dayPrev" type="button" aria-label="Previous day">‹</button>
+        <div class="dlabel">
+          <div class="hdr-day" id="addDayLabel">—</div>
+          <div class="hdr-sub" id="addDateLabel">—</div>
+          <!-- Invisible date input laid over the label: tapping the date opens the phone's own picker -->
+          <input type="date" id="dayInput" aria-label="Choose a date">
+        </div>
+        <button class="dnav" id="dayNext" type="button" aria-label="Next day">›</button>
       </div>
       <button class="chip-city" id="addCityBtn" type="button">Osaka</button>
     </header>
+
+    <button class="budget-strip" id="budgetStrip" type="button"></button>
 
     <div class="amount-wrap">
       <div class="amount-cur" id="addCur">¥</div>
@@ -55,42 +63,52 @@
 
   <!-- ============ CASH ============ -->
   <section class="view" id="view-cash" hidden>
-    <header class="hdr"><h1>Cash &amp; cards</h1></header>
+    <header class="hdr"><div><h1>Cash</h1><div class="hdr-sub">The money in your pocket</div></div></header>
 
     <div class="alert" id="shortAlert" hidden></div>
-    <div class="runway" id="runway"></div>
 
-    <div id="walletCards"></div>
+    <div class="pocket" id="pocketYen"></div>
+    <div class="pocket-row" id="pocketOther"></div>
 
-    <div class="actions">
-      <button class="act" id="btnAtm" type="button"><span>🏧</span>ATM withdrawal</button>
-      <button class="act" id="btnFx" type="button"><span>🔁</span>Change USD → yen</button>
-      <button class="act" id="btnCashIn" type="button"><span>💵</span>Add cash on hand</button>
-    </div>
+    <button class="save-btn" id="btnGotCash" type="button">＋ I got cash</button>
+    <div class="under-btn">After an ATM, a money changer, or cash you brought along</div>
 
-    <h2 class="sec" id="moneyInHd" hidden>Money in — check these against your statement</h2>
-    <div id="moneyInList"></div>
-
-    <h2 class="sec">What it's costing you</h2>
-    <div class="fee-box" id="feeBox"></div>
-    <p class="tip"><b>Withdrawing isn't spending.</b> Money you draw at an ATM has only moved from your
-      account into your pocket — it counts as spent when you actually hand it over. So drawing yen on your
-      FNB card and tapping that same card are never counted twice. The figure on each card above is what
-      that account has paid out in total, which is the number to check against your banking app.</p>
-    <p class="tip">At the ATM, always choose to be charged in <b>yen</b>, never rands — picking rands adds a hidden 3–7% markup.</p>
+    <p class="tip">At the ATM, always choose to be charged in <b>yen</b>, never rands. Choosing rands adds a hidden 3–7% markup.</p>
   </section>
 
-  <!-- ============ STATS ============ -->
-  <section class="view" id="view-stats" hidden>
-    <header class="hdr"><h1>Where it went</h1></header>
+  <!-- ============ SPENDING ============ -->
+  <section class="view" id="view-spending" hidden>
+    <header class="hdr"><div><h1>Spending</h1><div class="hdr-sub">Where your money went</div></div></header>
+
+    <div class="budget-card" id="budgetCard"></div>
+
     <div class="totals" id="statTotals"></div>
     <div class="seg" id="statSeg">
       <button class="on" data-seg="cat">Category</button>
       <button data-seg="day">Day</button>
       <button data-seg="city">City</button>
-      <button data-seg="wallet">Source</button>
+      <button data-seg="wallet">Paid with</button>
     </div>
     <div id="statBody"></div>
+
+    <div id="feeWrap">
+      <h2 class="sec">What getting at your money cost</h2>
+      <div class="fee-box" id="feeBox"></div>
+    </div>
+  </section>
+
+  <!-- ============ ENTRIES ============ -->
+  <section class="view" id="view-entries" hidden>
+    <header class="hdr"><div><h1>Entries</h1><div class="hdr-sub">Everything you've logged, in both currencies</div></div></header>
+
+    <div id="acctBox"></div>
+
+    <div class="seg" id="entrySeg">
+      <button class="on" data-f="all">Everything</button>
+      <button data-f="spend">Spends</button>
+      <button data-f="in">Money in</button>
+    </div>
+    <div id="txList"></div>
   </section>
 
   <!-- ============ NOTES ============ -->
@@ -113,30 +131,33 @@
     <div id="notesList"></div>
   </section>
 
-  <!-- ============ DATA ============ -->
-  <section class="view" id="view-data" hidden>
-    <header class="hdr"><h1>Entries &amp; backup</h1></header>
+  <!-- ============ BACKUP ============ -->
+  <section class="view" id="view-backup" hidden>
+    <header class="hdr"><div><h1>Backup &amp; settings</h1><div class="hdr-sub">Keep a copy safe, off this phone</div></div></header>
 
     <div class="backup-box" id="backupBox"></div>
     <div class="actions">
       <button class="act" id="btnBackup" type="button"><span>☁️</span>Back up to Drive</button>
       <button class="act" id="btnCsv" type="button"><span>📄</span>Export spreadsheet (CSV)</button>
       <button class="act" id="btnRestore" type="button"><span>↩️</span>Restore from backup file</button>
-      <button class="act" id="btnSettings" type="button"><span>⚙️</span>Rates &amp; fees</button>
     </div>
     <input type="file" id="restoreFile" accept=".json,application/json" hidden>
 
-    <h2 class="sec">All entries</h2>
-    <div id="txList"></div>
+    <h2 class="sec">Settings</h2>
+    <div class="actions" style="margin-top:0">
+      <button class="act" id="btnSettings" type="button"><span>⚙️</span>Rates, fees and budget</button>
+    </div>
+    <p class="tip">Also in there: the app version, a sample trip to play with, and clearing everything before you fly.</p>
   </section>
 
   <!-- ============ TAB BAR ============ -->
   <nav class="tabs" id="tabs">
     <button data-v="add" class="on"><span>＋</span>Add</button>
     <button data-v="cash"><span>👛</span>Cash</button>
-    <button data-v="stats"><span>📊</span>Stats</button>
+    <button data-v="spending"><span>📊</span>Spending</button>
+    <button data-v="entries"><span>📋</span>Entries</button>
     <button data-v="notes"><span>📝</span>Notes</button>
-    <button data-v="data"><span>🗂️</span>Data</button>
+    <button data-v="backup"><span>☁️</span>Backup</button>
   </nav>
 </div>
 
