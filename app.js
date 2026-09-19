@@ -76,7 +76,7 @@ const DEFAULTS = {
     creditFxPct: 2.75,  // FNB credit card margin
     mymoFxPct: 5.0,     // Standard Bank MyMo — emergency only
     giftedUsdFree: true, // USD was a gift: counts as R0 out of pocket
-    dailyBudget: 1500   // rands a day, measured against "spent" (market value); 0 hides it
+    dailyBudget: 1500   // rands a day of your own money (gifted dollars excluded); 0 hides it
   },
   lastBackup: null,
   ui: { wallet:'jpy', cat:'food', city:null }
@@ -284,14 +284,23 @@ function daysLeft(){
 }
 
 /* ---------- daily budget ----------
-   Measured against "spent" — what things were worth at the market rate — so
-   paying with the gifted dollars still counts. Fees are reported separately.  */
+   Measured against what comes out of your own pocket (zarCost), not what things
+   were worth. The gifted dollars carry a R0 cost, so anything they pay for —
+   spent as dollars, or as yen they were changed into — doesn't count. Once gift
+   yen and ATM yen are mixed, each spend counts only its paid-for share. ATM
+   fees and card margins do count: that's your money too.                      */
 
 const TRIP_DAYS = dayNo(TRIP_END);
 
+// What things were worth that day — for the Entries day headings
 function spentOn(date, L = ledger()){
   return L.priced.filter(t => t.kind === 'spend' && t.date === date)
                  .reduce((a,t) => a + t.zarValue, 0);
+}
+// What came out of your own pocket that day — what the budget counts
+function ownMoneyOn(date, L = ledger()){
+  return L.priced.filter(t => t.kind === 'spend' && t.date === date)
+                 .reduce((a,t) => a + t.zarCost, 0);
 }
 
 function budgetSummary(L = ledger()){
@@ -302,11 +311,11 @@ function budgetSummary(L = ledger()){
   const last = spends.reduce((m,t) => t.date > m ? t.date : m, today());
   const through = last > TRIP_END ? TRIP_END : last;
   const days = Math.max(1, dayNo(through));
-  const spent = spends.filter(t => t.date <= through).reduce((a,t) => a + t.zarValue, 0);
+  const spent = spends.filter(t => t.date <= through).reduce((a,t) => a + t.zarCost, 0);
   const allowed = daily * days;
   const remainingDays = TRIP_DAYS - days;
   const wholeTrip = daily * TRIP_DAYS;
-  const totalSpent = spends.reduce((a,t) => a + t.zarValue, 0);
+  const totalSpent = spends.reduce((a,t) => a + t.zarCost, 0);
   return { daily, days, spent, allowed, diff: allowed - spent, remainingDays, wholeTrip,
            perDayToFinish: remainingDays > 0 ? (wholeTrip - totalSpent) / remainingDays : null };
 }
@@ -435,7 +444,7 @@ function renderBudgetStrip(){
   const daily = S.settings.dailyBudget || 0;
   b.hidden = daily <= 0;
   if (daily <= 0) return;
-  const spent = spentOn(draft.date);
+  const spent = ownMoneyOn(draft.date);
   const left = daily - spent;
   const pct = Math.min(100, spent / daily * 100);
   b.classList.toggle('over', left < 0);
@@ -716,7 +725,7 @@ function renderSpending(){
   $('#statTotals').innerHTML =
     `<div><div class="lbl">Spent so far</div><div class="val">${R(val)}</div></div>` +
     `<div><div class="lbl">Out of your pocket</div><div class="val">${R(ownPocket)}</div></div>` +
-    `<div><div class="lbl">Average a day</div><div class="val">${R(B.spent / B.days)}</div></div>` +
+    `<div><div class="lbl">Own money a day</div><div class="val">${R(B.spent / B.days)}</div></div>` +
     `<div><div class="lbl">Entries</div><div class="val">${spends.length}</div></div>`;
 
   renderFees(L);
@@ -770,19 +779,23 @@ function renderBudgetCard(B){
     `<div class="bc-main"><b>${R0(B.spent)}</b> of ${R0(B.allowed)} so far <span>(${B.days} ${B.days===1?'day':'days'})</span></div>` +
     `<div class="bs-bar"><div class="bs-fill" style="width:${pct.toFixed(1)}%"></div></div>` +
     `<div class="bc-verdict">${under ? `${R0(B.diff)} under budget` : `${R0(B.diff)} over budget`}</div>` +
-    (ahead ? `<div class="bc-ahead">${ahead}</div>` : '');
+    (ahead ? `<div class="bc-ahead">${ahead}</div>` : '') +
+    `<div class="bc-note">Your own money only. Anything paid for with the gifted dollars doesn't count.</div>`;
 }
 
 // Day view: every trip day so far against the daily budget, with a marker
 // where the budget sits, so a quiet day and a splurge day read at a glance.
 function renderDayBars(spends, daily){
   const byDay = {};
-  spends.forEach(t => byDay[t.date] = (byDay[t.date]||0) + t.zarValue);
+  // Same measure as the budget: your own money, gifted dollars excluded
+  spends.forEach(t => byDay[t.date] = (byDay[t.date]||0) + t.zarCost);
   const last = Object.keys(byDay).sort().pop();
   const days = [];
   for (let d = TRIP_START; d <= last; d = addDays(d,1)) days.push(d);
   const scale = Math.max(daily, ...Object.values(byDay));
-  $('#statBody').innerHTML = days.slice().reverse().map(d => {
+  $('#statBody').innerHTML =
+    `<p class="tip" style="margin:0 2px 12px">Your own money each day${daily > 0 ? ', against the budget' : ''}. The gifted dollars don't count here.</p>` +
+    days.slice().reverse().map(d => {
     const v = byDay[d] || 0;
     const diff = daily - v;
     const verdict = daily > 0
@@ -985,7 +998,7 @@ function dlgSettings(){
   modal('Rates, fees and budget', `
     <h2 class="sec" style="margin-top:0">Daily budget</h2>
     <div class="f"><label>Rands a day</label><input type="number" id="sBudget" inputmode="numeric" value="${s.dailyBudget}">
-      <div class="hint">Counts everything you spend, including what you pay for with the gifted dollars. Set it to 0 to hide the budget.</div></div>
+      <div class="hint">Counts only your own money. Anything paid for with the gifted dollars doesn't count, whether you spend them as dollars or change them into yen. ATM and card fees do count. Set it to 0 to hide the budget.</div></div>
 
     <h2 class="sec">Exchange rates</h2>
     <div class="calc" id="rateStatus"></div>

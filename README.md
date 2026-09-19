@@ -115,9 +115,14 @@ When you've got cash, tap **I got cash** and it asks how:
 ### Spending — where it went
 The **budget card** at the top shows what you've spent so far against R1,500 a day, how
 far over or under you are, and what you can spend each day for the rest of the trip to
-finish on budget. It counts everything you spend, including what you pay for with the
-gifted dollars. Change the figure, or set it to 0 to hide it, under Backup → Rates, fees
-and budget.
+finish on budget. It counts only **your own money**: anything paid for with the gifted
+dollars doesn't count, whether you spend them as dollars or change them into yen first.
+Once gift yen and ATM yen are mixed in your purse, each spend counts only its paid-for
+share. ATM fees and card fees do count, because that's your money too. Change the
+figure, or set it to 0 to hide it, under Backup → Rates, fees and budget.
+
+That's why a day's budget figure can be lower than what the Entries tab says you spent
+that day: Entries shows what everything was worth, the budget shows what it cost you.
 
 Below that, totals by category, by day (each day measured against the budget), by city,
 and by what you paid with. Two headline numbers:
